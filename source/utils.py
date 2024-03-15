@@ -1,10 +1,32 @@
-from datetime import datetime
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-import joblib
+import joblib 
+import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
+from datetime import datetime
+from scipy import stats
+from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+def import_data(refresh=False):
+    """
+    Import data either from a CSV file or from an online source.
+
+    Parameters:
+    refresh (bool): Whether to refresh the data by downloading it again
+
+    Returns:
+    DataFrame: The imported raw data
+    """
+    if refresh:
+        print("Loading and preprocessing new data...")
+        raw_data = pd.read_csv("https://raw.githubusercontent.com/bear-revels/immo-eliza-scraping-Python_Pricers/main/data/all_property_details.csv", dtype={'PostalCode': str})
+        raw_data.to_csv('./data/raw_data.csv', index=False, encoding='utf-8')
+    else:
+        print("Preprocessing the existing data...")
+        raw_data = pd.read_csv('./data/raw_data.csv')
+    return raw_data
 
 def clean_data(raw_data):
     """
@@ -12,6 +34,9 @@ def clean_data(raw_data):
 
     Parameters:
     raw_data (DataFrame): The raw DataFrame to be cleaned
+
+    Returns:
+    DataFrame: The cleaned DataFrame
     """
 
     cleaned_data = raw_data.copy()
@@ -74,8 +99,20 @@ def clean_data(raw_data):
     # Task 13: Replace values less than or equal to 0 in 'EnergyConsumptionPerSqm' with 0
     cleaned_data.loc[cleaned_data['EnergyConsumptionPerSqm'] < 0, 'EnergyConsumptionPerSqm'] = 0
 
-    # Add 1 to the BedroomCount column to avoid division by zero later
-    cleaned_data['BedroomCount'] += 1
+    # Task 14: Feature Engineering and Outlier Removal
+    cleaned_data['PricePerSqm'] = cleaned_data['Price'] / cleaned_data['LivingArea']
+    
+    # Add 1 to the BedroomCount column and fill null values with 1
+    cleaned_data['BedroomCount'] = cleaned_data['BedroomCount'].fillna(0) + 1
+
+    # Create a new column called SqmPerBedroom
+    cleaned_data['SqmPerBedroom'] = cleaned_data['LivingArea'] / cleaned_data['BedroomCount']
+
+    # Calculate z-scores within each group defined by 'PostalCode' and 'PropertySubType'
+    z_scores = cleaned_data.groupby(['PostalCode', 'PropertySubType'])[['PricePerSqm', 'SqmPerBedroom']].transform(stats.zscore)
+
+    # Filter out rows where the absolute z-score is less than 3 for both columns
+    cleaned_data = cleaned_data[(abs(z_scores['PricePerSqm']) < 3) & (abs(z_scores['SqmPerBedroom']) < 3)]
 
     # Task 15: Convert string values to numeric values using dictionaries for specified columns
     condition_mapping = {
@@ -111,12 +148,9 @@ def clean_data(raw_data):
                        'City',
                        'Region', 
                        'District', 
-                       'Province', 
                        'PropertyType', 
                        'SaleType', 
-                       'BedroomCount',
                        'BidStylePricing', 
-                       'BedroomCount', 
                        'KitchenType',
                        'Terrace', 
                        'Garden', 
@@ -127,11 +161,15 @@ def clean_data(raw_data):
                        'ListingExpirationDate', 
                        'ListingCloseDate', 
                        'PropertyUrl', 
+                       'PricePerSqm',
+                       'SqmPerBedroom',
+                       'ListingCreateDate',
+                       'EnergyConsumptionPerSqm',
+                    #    'bookmarkCount',
+                    #    'ViewCount',
+                       'PostalCode',
                        'Property url']
     cleaned_data.drop(columns=columns_to_drop, inplace=True)
-
-    # Task 17: Convert 'PropertySubType' categorical data into numeric features using one-hot encoding
-    cleaned_data = pd.get_dummies(cleaned_data, columns=['PropertySubType'], prefix='Property', dummy_na=False, drop_first=True)
 
     # Save the cleaned data to a CSV file
     cleaned_data.to_csv('./data/clean_data.csv', index=False, encoding='utf-8')
@@ -139,96 +177,121 @@ def clean_data(raw_data):
     # Return the cleaned DataFrame
     return cleaned_data
 
-def normalize_data(cleaned_data):
+def split_data(data, test_size=0.2, random_state=None):
     """
-    Normalize the cleaned data by scaling numeric features.
+    Split the data into training and testing datasets.
 
     Parameters:
-    cleaned_data (DataFrame): The cleaned DataFrame to be normalized
+    data (DataFrame): The DataFrame containing the features and target variable
+    test_size (float): The proportion of the dataset to include in the test split (default is 0.2)
+    random_state (int or None): Controls the shuffling applied to the data before splitting (default is None)
 
     Returns:
-    DataFrame: The normalized DataFrame
+    tuple: A tuple containing train and test datasets (X_train, X_test, y_train, y_test)
     """
-    normal_data = cleaned_data.copy()
+    # Extract features (X) and target variable (y)
+    X = data.drop('Price', axis=1)
+    y = data['Price']
 
-    # Task 1: Impute null values for 'Floor'
-    floor_imputer = SimpleImputer(strategy='median')
-    normal_data['Floor'] = floor_imputer.fit_transform(normal_data[['Floor']])
+    # Split the data into train and test sets
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
 
-    # Task 2: Impute null values for 'ConstructionYear'
-    construction_year_imputer = SimpleImputer(strategy='median')
-    normal_data['ConstructionYear'] = construction_year_imputer.fit_transform(normal_data[['ConstructionYear']])
+    return X_train, X_test, y_train, y_test
 
-    # Task 3: Impute null values for 'Facades'
-    facades_imputer = SimpleImputer(strategy='median')
-    normal_data['Facades'] = facades_imputer.fit_transform(normal_data[['Facades']])
-
-    # Task 4: Impute null values for 'EnergyConsumptionPerSqm'
-    energy_imputer = SimpleImputer(strategy='median')
-    normal_data['EnergyConsumptionPerSqm'] = energy_imputer.fit_transform(normal_data[['EnergyConsumptionPerSqm']])
-
-    # Task 5: Impute null values for 'Condition#'
-    condition_imputer = SimpleImputer(strategy='median')
-    normal_data['Condition#'] = condition_imputer.fit_transform(normal_data[['Condition#']])
-
-    # Task 6: Impute null values for 'KitchenType#'
-    kitchen_imputer = SimpleImputer(strategy='median')
-    normal_data['KitchenType#'] = kitchen_imputer.fit_transform(normal_data[['KitchenType#']])
-
-    # Task 7: Round float columns to the nearest whole number and convert to int64 type
-    float_columns = normal_data.select_dtypes(include=['float64']).columns
-    normal_data[float_columns] = normal_data[float_columns].round().astype('Int64')
-    
-    normal_data = normal_data.astype(int)  # Convert boolean values to integers (1s and 0s)
-
-    # Select the columns to normalize
-    columns_to_normalize = ['Floor', 'PostalCode', 'Price', 'ConstructionYear', 'Furnished', 'Fireplace', 'TerraceArea', 'GardenArea', 'Facades', 'SwimmingPool', 'EnergyConsumptionPerSqm', 'ListingCreateDate', 'bookmarkCount', 'ViewCount', 'LivingArea', 'Condition#', 'KitchenType#']
-
-    # Initialize the StandardScaler and MinMaxScaler
-    scaler_standard = StandardScaler()
-    scaler_minmax = MinMaxScaler()
-
-    # Fit and transform the data with StandardScaler
-    normal_data[columns_to_normalize] = scaler_standard.fit_transform(normal_data[columns_to_normalize])
-
-    # Fit and transform the data with MinMaxScaler
-    normal_data[columns_to_normalize] = scaler_minmax.fit_transform(normal_data[columns_to_normalize])
-
-    return normal_data
-
-def import_data(refresh=False):
+def encode_data(cleaned_data, train_columns=None):
     """
-    Import data either from a CSV file or from an online source.
+    Encode categorical data using one-hot encoding.
 
     Parameters:
-    refresh (bool): Whether to refresh the data by downloading it again
+    cleaned_data (DataFrame): The cleaned DataFrame
+    train_columns (list): List of column names in the training dataset (optional)
 
     Returns:
-    DataFrame: The imported raw data
+    DataFrame: The DataFrame with encoded categorical features
     """
-    if refresh:
-        print("Loading and preprocessing new data...")
-        raw_data = pd.read_csv("https://raw.githubusercontent.com/bear-revels/immo-eliza-scraping-Python_Pricers/main/data/all_property_details.csv", dtype={'PostalCode': str})
-        raw_data.to_csv('./data/raw_data.csv', index=False, encoding='utf-8')
+   
+    # Encode categorical data using one-hot encoding
+    encoded_data = pd.get_dummies(cleaned_data, columns=['PropertySubType', 'Province'], dummy_na=False, drop_first=True)
+
+    # Convert boolean columns to integer (0 or 1)
+    bool_columns = encoded_data.select_dtypes(include=bool).columns
+    encoded_data[bool_columns] = encoded_data[bool_columns].astype(int)
+
+    # Ensure that the columns in the test dataset match the columns in the training dataset
+    if train_columns is not None:
+        # Add missing columns in test dataset, if any
+        missing_columns = set(train_columns) - set(encoded_data.columns)
+        for col in missing_columns:
+            encoded_data[col] = 0
+
+        # Remove additional columns in test dataset, if any
+        extra_columns = set(encoded_data.columns) - set(train_columns)
+        encoded_data = encoded_data[train_columns]
+
+    # Save the encoded data to a CSV file
+    encoded_data.to_csv('./data/encoded_data.csv', index=False, encoding='utf-8')
+
+    return encoded_data
+
+def impute_data(encoded_data):
+    """
+    Impute missing values in the DataFrame using group-wise imputation.
+
+    Parameters:
+    encoded_data (DataFrame): The DataFrame with encoded categorical features
+
+    Returns:
+    DataFrame: The DataFrame with imputed missing values
+    """
+
+    # Impute missing values using SimpleImputer with median strategy
+    imputer = SimpleImputer(strategy='median')
+    imputed_data = pd.DataFrame(imputer.fit_transform(encoded_data), columns=encoded_data.columns)
+
+    # Save the imputed data to a CSV file
+    imputed_data.to_csv('./data/imputed_data.csv', index=False, encoding='utf-8')
+
+    return imputed_data
+
+def standardize_data(imputed_data):
+    """
+    Standardize the DataFrame by scaling numeric features.
+
+    Parameters:
+    imputed_data (DataFrame): The DataFrame with imputed missing values
+
+    Returns:
+    DataFrame: The standardized DataFrame
+    """
+    # Standardize the data using StandardScaler
+    scaler = StandardScaler()
+    standardized_data = pd.DataFrame(scaler.fit_transform(imputed_data), columns=imputed_data.columns)
+    return standardized_data
+
+def execute_model(model_type, refresh_data):
+    """
+    Execute the specified model.
+
+    Parameters:
+    model_type (str): The type of model to execute
+    refresh_data (bool): Whether to refresh the data.
+
+    Returns:
+    tuple: A tuple containing evaluation metrics (dict), actual values (array), and predicted values (array)
+    """
+    if model_type == "linear_regression":
+        from source.models import execute_linear_regression
+        metrics, y_test, y_pred = execute_linear_regression(refresh_data)
+    elif model_type == "logarithmic_regression":
+        from source.models import execute_logarithmic_regression
+        metrics, y_test, y_pred = execute_logarithmic_regression(refresh_data)
+    elif model_type == "auto_ml":
+        from source.models import execute_auto_ml
+        metrics, y_test, y_pred = execute_auto_ml(refresh_data)
     else:
-        print("Preprocessing the existing data...")
-        raw_data = pd.read_csv('./data/raw_data.csv')
-    return raw_data
+        raise ValueError("Invalid model type. Please select a valid model.")
 
-def load_model(filename):
-    """
-    Load a machine learning model from a file.
-
-    Parameters:
-    filename (str): The name of the file containing the model
-
-    Returns:
-    model: The loaded machine learning model
-    """
-    filepath = os.path.join("./models", filename + ".pkl")
-    model = joblib.load(filepath)
-    print(f"Model loaded from {filepath}")
-    return model
+    return metrics, y_test, y_pred
 
 def save_model(model, filename):
     """
@@ -244,22 +307,45 @@ def save_model(model, filename):
     joblib.dump(model, filepath)
     print(f"Model saved as {filepath}")
 
-def execute_model(selected_model, refresh=False):
+def visualize_metrics(metrics, y_test, y_pred):
     """
-    Execute the selected machine learning model.
+    Print the evaluation metrics of a model and visualize the predicted vs actual values.
 
     Parameters:
-    selected_model (str): The name of the selected model
-    refresh (bool): Whether to refresh the data before execution
+    metrics (dict): Dictionary containing evaluation metrics
+    y_test (array-like): True target values
+    y_pred (array-like): Predicted target values
     """
-    if selected_model == "linear_regression":
-        from source.models import execute_linear_regression
-        execute_linear_regression(refresh)
-    elif selected_model == "auto_ml":
-        from source.models import execute_auto_ml
-        execute_auto_ml(refresh)
-    elif selected_model == "multi_linear_regression":
-        from source.models import execute_multi_linear_regression
-        execute_multi_linear_regression(refresh)
-    else:
-        print("Selected model not found.")
+    # Extract metric values
+    mse = metrics.get("Mean Squared Error")
+    r_squared = metrics.get("R-squared value")
+
+    # Convert R-squared value to percentage
+    r_squared_percent = round(r_squared * 100, 2)
+
+    # Print the metrics
+    print("Evaluation Metrics:")
+    print("Mean Squared Error:", mse)
+    print("R-squared value:", f"{r_squared_percent:.2f}%")
+
+    # Plot the metrics
+    fig, ax = plt.subplots(1, 3, figsize=(18, 5))
+
+    # Plot Mean Squared Error
+    ax[0].bar(["Mean Squared Error"], [mse], color='blue')
+    ax[0].set_title(f"Mean Squared Error: {mse:.2f}")
+
+    # Plot R-squared value
+    ax[1].bar(["R-squared value"], [r_squared_percent], color='green')
+    ax[1].set_title(f"R-squared value: {r_squared_percent:.2f}%")
+    ax[1].set_ylim([0, 100])  # Set y-axis limits to 0 and 100
+
+    # Plot predicted vs actual values
+    ax[2].scatter(y_test, y_pred, color='blue', alpha=0.5)
+    ax[2].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--', lw=2)  # Plot diagonal line
+    ax[2].set_xlabel('Actual')
+    ax[2].set_ylabel('Predicted')
+    ax[2].set_title('Predicted vs Actual')
+
+    plt.tight_layout()
+    plt.show()

@@ -1,29 +1,53 @@
-from source.utils import execute_model  # Importing the execute_model function from source.utils module
 import time
+from source.utils import execute_model, visualize_metrics
 
 def main():
-    """
-    Main function to execute the Model Execution App.
-    """
     print("Welcome to the Model Execution App!")
 
+
     # Ask which model to use
-    model = input("Select a model to run (linear_regression, auto_ml, multi_linear_regression): ")
+    print("Select a model to run:")
+    print("1. Linear Regression")
+    print("2. Logarithmic Regression")
+    print("3. Auto ML")
+    choice = int(input("Enter your choice (1/2/3): "))
+
+    models = {
+        1: "linear_regression",
+        2: "logarithmic_regression",
+        3: "auto_ml"
+    }
+
+    if choice not in models:
+        print("Invalid choice. Please select a valid option.")
+        return
+
+    model = models[choice]
 
     # Ask if the data should be refreshed
-    refresh_data = input("Would you like to refresh the data? (yes/no): ").lower() == 'yes'
+    print("Would you like to refresh the data?")
+    print("1. Yes")
+    print("2. No")
+    refresh_choice = int(input("Enter your choice (1/2): "))
+
+    refresh_data = True if refresh_choice == 1 else False
 
     start_time = time.time()
     print("Program initiated:", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start_time)))
     print(f"Model selected: {model}")
 
     # Execute the selected model function
-    execute_model(model, refresh_data)
+    metrics, y_test, y_pred = execute_model(model, refresh_data)
 
     # Print total runtime
     end_time = time.time()
     runtime = end_time - start_time
     print(f"Total Run Time: {runtime:.2f} seconds")
+
+    # Visualize model evaluation metrics
+    if metrics:
+        visualize_metrics(metrics, y_test, y_pred)
+
 
 if __name__ == "__main__":
     main()
