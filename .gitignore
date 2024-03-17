@@ -1,1 +1,3 @@
 source/__pycache__/
+data/external_data/REFNIS_CODES.geojson
+models/

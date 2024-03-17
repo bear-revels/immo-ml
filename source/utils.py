@@ -1,3 +1,4 @@
+import geopandas as gpd
 import joblib 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -5,7 +6,8 @@ import os
 import pandas as pd
 from datetime import datetime
 from scipy import stats
-from sklearn.impute import SimpleImputer
+from shapely.geometry import Point
+from sklearn.impute import KNNImputer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -23,10 +25,66 @@ def import_data(refresh=False):
         print("Loading and preprocessing new data...")
         raw_data = pd.read_csv("https://raw.githubusercontent.com/bear-revels/immo-eliza-scraping-Python_Pricers/main/data/all_property_details.csv", dtype={'PostalCode': str})
         raw_data.to_csv('./data/raw_data.csv', index=False, encoding='utf-8')
+
     else:
         print("Preprocessing the existing data...")
         raw_data = pd.read_csv('./data/raw_data.csv')
     return raw_data
+
+def join_data(raw_data):
+    geo_data = gpd.GeoDataFrame(raw_data)
+
+    # Define a function to create Point objects from latitude and longitude
+    def create_point(row):
+        try:
+            latitude = float(row['Latitude'])
+            longitude = float(row['Longitude'])
+            return Point(longitude, latitude)
+        except ValueError:
+            return None
+
+    # Create Point geometries from latitude and longitude coordinates in real estate data
+    geo_data['geometry'] = geo_data.apply(create_point, axis=1)
+
+    # Explicitly set CRS to WGS 84 (EPSG:4326)
+    geo_data.crs = 'EPSG:4326'
+
+    # Set geometry column after creating 'geometry' column
+    geo_data = geo_data.set_geometry('geometry')  # Explicitly set the active geometry column
+    
+    # Explicitly set CRS to WGS 84 (EPSG:4326)
+    geo_data.crs = 'EPSG:4326'
+
+    municipality_gdf = gpd.read_file('./data/external_data/REFNIS_CODES.geojson', driver='GeoJSON').to_crs(epsg=4326)
+
+    # Perform spatial join with municipality data
+    joined_data = gpd.sjoin(geo_data, municipality_gdf, how='left', predicate='within')
+
+    # Load external data
+    pop_density_data = pd.read_excel('./data/external_data/PopDensity.xlsx')
+    house_income_data = pd.read_excel('./data/external_data/HouseholdIncome.xlsx')
+
+    # Convert columns to int type
+    pop_density_data['Refnis'] = pop_density_data['Refnis'].astype(int)
+    house_income_data['Refnis'] = house_income_data['CD_MUNTY_REFNIS'].astype(int)
+    
+    # Replace NaN values in 'cd_munty_refnis' column
+    joined_data['cd_munty_refnis'] = joined_data['cd_munty_refnis'].fillna(-1)  # Use -1 as a placeholder value
+    
+    # Convert 'cd_munty_refnis' column to int type
+    joined_data['cd_munty_refnis'] = joined_data['cd_munty_refnis'].astype(int)
+
+    # Perform second join with population density data
+    joined_data = joined_data.merge(pop_density_data, left_on='cd_munty_refnis', right_on='Refnis', how='left')
+    joined_data = joined_data.merge(house_income_data, left_on='cd_munty_refnis', right_on='Refnis', how='left')
+
+    # Convert the result to a DataFrame
+    joined_data = pd.DataFrame(joined_data)
+
+    joined_data.to_csv('./data/join_data.csv', index=False)
+
+    # Return the resulting DataFrame
+    return joined_data
 
 def clean_data(raw_data):
     """
@@ -43,7 +101,7 @@ def clean_data(raw_data):
 
     # Task 1: Drop rows with empty values in 'Price', 'LivingArea', or 'BedroomCount' columns,
     # and drop rows where any of these columns contain infinite values
-    cleaned_data = cleaned_data.dropna(subset=['Price', 'LivingArea', 'BedroomCount'])
+    cleaned_data = cleaned_data.dropna(subset=['Price', 'LivingArea', 'BedroomCount', 'Longitude', 'Latitude'])
     cleaned_data = cleaned_data[~cleaned_data[['Price', 'LivingArea', 'BedroomCount']].isin([np.inf, -np.inf]).any(axis=1)]
 
     # Task 2: Remove duplicates in the 'ID' column and where all columns but 'ID' are equal
@@ -99,20 +157,8 @@ def clean_data(raw_data):
     # Task 13: Replace values less than or equal to 0 in 'EnergyConsumptionPerSqm' with 0
     cleaned_data.loc[cleaned_data['EnergyConsumptionPerSqm'] < 0, 'EnergyConsumptionPerSqm'] = 0
 
-    # Task 14: Feature Engineering and Outlier Removal
-    cleaned_data['PricePerSqm'] = cleaned_data['Price'] / cleaned_data['LivingArea']
-    
     # Add 1 to the BedroomCount column and fill null values with 1
     cleaned_data['BedroomCount'] = cleaned_data['BedroomCount'].fillna(0) + 1
-
-    # Create a new column called SqmPerBedroom
-    cleaned_data['SqmPerBedroom'] = cleaned_data['LivingArea'] / cleaned_data['BedroomCount']
-
-    # Calculate z-scores within each group defined by 'PostalCode' and 'PropertySubType'
-    z_scores = cleaned_data.groupby(['PostalCode', 'PropertySubType'])[['PricePerSqm', 'SqmPerBedroom']].transform(stats.zscore)
-
-    # Filter out rows where the absolute z-score is less than 3 for both columns
-    cleaned_data = cleaned_data[(abs(z_scores['PricePerSqm']) < 3) & (abs(z_scores['SqmPerBedroom']) < 3)]
 
     # Task 15: Convert string values to numeric values using dictionaries for specified columns
     condition_mapping = {
@@ -141,34 +187,29 @@ def clean_data(raw_data):
     cleaned_data['KitchenType#'] = cleaned_data['KitchenType'].map(kitchen_mapping)
 
     # Task 16: Remove specified columns
-    columns_to_drop = ['ID', 
-                       'Street', 
-                       'HouseNumber', 
-                       'Box',
-                       'City',
-                       'Region', 
-                       'District', 
-                       'PropertyType', 
-                       'SaleType', 
-                       'BidStylePricing', 
-                       'KitchenType',
-                       'Terrace', 
-                       'Garden', 
-                       'EPCScore',
-                       'Condition',
-                       'Latitude', 
-                       'Longitude', 
-                       'ListingExpirationDate', 
-                       'ListingCloseDate', 
-                       'PropertyUrl', 
-                       'PricePerSqm',
-                       'SqmPerBedroom',
-                       'ListingCreateDate',
-                       'EnergyConsumptionPerSqm',
-                    #    'bookmarkCount',
-                    #    'ViewCount',
-                       'PostalCode',
-                       'Property url']
+    columns_to_drop = [
+    'ID', 'Street', 'HouseNumber', 'Box', 'City', 'Region', 'District', 'PropertyType', 
+    'SaleType', 'BidStylePricing', 'KitchenType', 'Terrace', 'Garden', 'EPCScore', 
+    'Condition', 'ListingExpirationDate', 'ListingCloseDate', 
+    'PropertyUrl', 'ListingCreateDate', 'Property url', 'geometry', 'index_right', 'ogc_fid', 
+    'ogc_fid0', 'cd_sector', 'tx_sector_descr_nl', 'tx_sector_descr_fr', 'tx_sector_descr_de', 
+    'cd_sub_munty', 'tx_sub_munty_nl', 'tx_sub_munty_fr', 'tx_munty_dstr', 'cd_munty_refnis', 
+    'tx_munty_descr_nl', 'tx_munty_descr_fr', 'tx_munty_descr_de', 'cd_dstr_refnis', 
+    'tx_adm_dstr_descr_nl', 'tx_adm_dstr_descr_fr', 'tx_adm_dstr_descr_de', 'cd_prov_refnis', 
+    'tx_prov_descr_nl', 'tx_prov_descr_fr', 'tx_prov_descr_de', 'cd_rgn_refnis', 
+    'tx_rgn_descr_nl', 'tx_rgn_descr_fr', 'tx_rgn_descr_de', 'cd_country', 'cd_nuts_lvl1', 
+    'cd_nuts_lvl2', 'cd_nuts_lvl3', 'ms_area_ha', 'ms_perimeter_m', 'dt_situation', 
+    'Municipality FR', 'Municipality NL', 'Size in km²', 'Refnis_x', 
+    'CD_MUNTY_REFNIS', 'MS_NBR_NON_ZERO_INC', 'MS_NBR_ZERO_INC', 
+    'MS_TOT_NET_TAXABLE_INC', 'MS_NBR_TOT_NET_INC', 'MS_REAL_ESTATE_NET_INC', 
+    'MS_NBR_REAL_ESTATE_NET_INC', 'MS_TOT_NET_MOV_ASS_INC', 'MS_NBR_NET_MOV_ASS_INC', 
+    'MS_TOT_NET_VARIOUS_INC', 'MS_NBR_NET_VARIOUS_INC', 'MS_TOT_NET_PROF_INC', 'MS_NBR_NET_PROF_INC', 
+    'MS_SEP_TAXABLE_INC', 'MS_NBR_SEP_TAXABLE_INC', 'MS_JOINT_TAXABLE_INC', 'MS_NBR_JOINT_TAXABLE_INC', 
+    'MS_TOT_DEDUCT_SPEND', 'MS_NBR_DEDUCT_SPEND', 'MS_TOT_STATE_TAXES', 'MS_NBR_STATE_TAXES', 
+    'MS_TOT_MUNICIP_TAXES', 'MS_NBR_MUNICIP_TAXES', 'MS_TOT_SUBURBS_TAXES', 'MS_NBR_SUBURBS_TAXES',
+    'MS_TOT_TAXES', 'MS_NBR_TOT_TAXES', 'MS_TOT_RESIDENTS', 'Refnis_y', 'bookmarkCount'
+    ]
+
     cleaned_data.drop(columns=columns_to_drop, inplace=True)
 
     # Save the cleaned data to a CSV file
@@ -176,6 +217,34 @@ def clean_data(raw_data):
 
     # Return the cleaned DataFrame
     return cleaned_data
+
+def engineer_features(cleaned_data):
+    engineered_data = cleaned_data.copy()
+
+    # Task 14: Feature Engineering and Outlier Removal
+    engineered_data['PricePerSqm'] = engineered_data['Price'] / engineered_data['LivingArea']
+
+    # Create a new column called SqmPerBedroom
+    engineered_data['SqmPerBedroom'] = engineered_data['LivingArea'] / engineered_data['BedroomCount']
+
+    # Create a new column called AvgHouseholdIncome
+    engineered_data['AvgHouseholdIncome'] = engineered_data['MS_TOT_NET_INC'] / engineered_data['Population']
+
+    # Calculate z-scores within each group defined by 'PostalCode' and 'PropertySubType'
+    z_scores = engineered_data.groupby(['PostalCode', 'PropertySubType'])[['PricePerSqm', 'SqmPerBedroom']].transform(stats.zscore)
+
+    # Filter out rows where the absolute z-score is less than 3 for both columns
+    engineered_data = engineered_data[(abs(z_scores['PricePerSqm']) < 3) & (abs(z_scores['SqmPerBedroom']) < 3)]
+
+    # Drop columns if they exist
+    columns_to_drop = ['PricePerSqm', 'PostalCode', 'Population', 'MS_TOT_NET_INC']
+    engineered_data = engineered_data.drop(columns=[col for col in columns_to_drop if col in engineered_data.columns], errors='ignore')
+
+    # Save the cleaned data to a CSV file
+    engineered_data.to_csv('./data/engineered_data.csv', index=False, encoding='utf-8')
+
+    # Return the cleaned DataFrame
+    return engineered_data
 
 def split_data(data, test_size=0.2, random_state=None):
     """
@@ -235,7 +304,7 @@ def encode_data(cleaned_data, train_columns=None):
 
 def impute_data(encoded_data):
     """
-    Impute missing values in the DataFrame using group-wise imputation.
+    Impute missing values in the DataFrame using KNN imputation.
 
     Parameters:
     encoded_data (DataFrame): The DataFrame with encoded categorical features
@@ -243,29 +312,38 @@ def impute_data(encoded_data):
     Returns:
     DataFrame: The DataFrame with imputed missing values
     """
+    # Create a copy of the encoded data
+    imputed_data = encoded_data.copy()
 
-    # Impute missing values using SimpleImputer with median strategy
-    imputer = SimpleImputer(strategy='median')
-    imputed_data = pd.DataFrame(imputer.fit_transform(encoded_data), columns=encoded_data.columns)
+    # Identify columns with missing values
+    columns_with_missing_values = imputed_data.columns[imputed_data.isnull().any()].tolist()
+
+    # Use KNN imputer to impute missing values
+    imputer = KNNImputer(n_neighbors=5)  # You can adjust the number of neighbors as needed
+    imputed_data[columns_with_missing_values] = imputer.fit_transform(imputed_data[columns_with_missing_values])
 
     # Save the imputed data to a CSV file
     imputed_data.to_csv('./data/imputed_data.csv', index=False, encoding='utf-8')
 
     return imputed_data
 
-def standardize_data(imputed_data):
+def standardize_data(data):
     """
     Standardize the DataFrame by scaling numeric features.
 
     Parameters:
-    imputed_data (DataFrame): The DataFrame with imputed missing values
+    data (DataFrame): The DataFrame to be standardized
 
     Returns:
     DataFrame: The standardized DataFrame
     """
     # Standardize the data using StandardScaler
     scaler = StandardScaler()
-    standardized_data = pd.DataFrame(scaler.fit_transform(imputed_data), columns=imputed_data.columns)
+    standardized_data = pd.DataFrame(scaler.fit_transform(data), columns=data.columns)
+
+    # Save the standardized data to a CSV file
+    standardized_data.to_csv('./data/standardized_data.csv', index=False, encoding='utf-8')
+
     return standardized_data
 
 def execute_model(model_type, refresh_data):
@@ -323,9 +401,12 @@ def visualize_metrics(metrics, y_test, y_pred):
     # Convert R-squared value to percentage
     r_squared_percent = round(r_squared * 100, 2)
 
+    # Format Mean Squared Error with commas for easier readability
+    formatted_mse = "{:,.2f}".format(mse)
+
     # Print the metrics
     print("Evaluation Metrics:")
-    print("Mean Squared Error:", mse)
+    print("Mean Squared Error:", formatted_mse)
     print("R-squared value:", f"{r_squared_percent:.2f}%")
 
     # Plot the metrics
@@ -333,7 +414,7 @@ def visualize_metrics(metrics, y_test, y_pred):
 
     # Plot Mean Squared Error
     ax[0].bar(["Mean Squared Error"], [mse], color='blue')
-    ax[0].set_title(f"Mean Squared Error: {mse:.2f}")
+    ax[0].set_title(f"Mean Squared Error: {formatted_mse}")
 
     # Plot R-squared value
     ax[1].bar(["R-squared value"], [r_squared_percent], color='green')

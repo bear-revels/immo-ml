@@ -48,6 +48,5 @@ def main():
     if metrics:
         visualize_metrics(metrics, y_test, y_pred)
 
-
 if __name__ == "__main__":
     main()
