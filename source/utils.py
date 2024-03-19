@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
+import seaborn as sns
 from datetime import datetime
 from scipy import stats
 from shapely.geometry import Point
@@ -32,7 +33,20 @@ def import_data(refresh=False):
     return raw_data
 
 def join_data(raw_data):
-    geo_data = gpd.GeoDataFrame(raw_data)
+    """
+    Join the raw data with external datasets.
+
+    Parameters:
+    raw_data (DataFrame): Raw data.
+
+    Returns:
+    DataFrame: Joined data.
+    """
+    # Load external datasets
+    geo_data = pd.DataFrame(raw_data)
+    pop_density_data = pd.read_excel('data/external_data/PopDensity.xlsx', dtype={'Refnis': int})
+    house_income_data = pd.read_excel('data/external_data/HouseholdIncome.xlsx', dtype={'Refnis': int})
+    property_value_data = pd.read_excel('data/external_data/PropertyValue.xlsx', dtype={'Refnis': int})
 
     # Define a function to create Point objects from latitude and longitude
     def create_point(row):
@@ -46,40 +60,23 @@ def join_data(raw_data):
     # Create Point geometries from latitude and longitude coordinates in real estate data
     geo_data['geometry'] = geo_data.apply(create_point, axis=1)
 
-    # Explicitly set CRS to WGS 84 (EPSG:4326)
-    geo_data.crs = 'EPSG:4326'
+    # Load the raw data into a GeoDataFrame
+    geo_data = gpd.GeoDataFrame(raw_data, geometry=geo_data['geometry'], crs='EPSG:4326')
 
-    # Set geometry column after creating 'geometry' column
-    geo_data = geo_data.set_geometry('geometry')  # Explicitly set the active geometry column
-    
-    # Explicitly set CRS to WGS 84 (EPSG:4326)
-    geo_data.crs = 'EPSG:4326'
-
-    municipality_gdf = gpd.read_file('./data/external_data/REFNIS_CODES.geojson', driver='GeoJSON').to_crs(epsg=4326)
+    # Read only the necessary column 'cd_munty_refnis' from the municipality GeoJSON file
+    municipality_gdf = gpd.read_file('data/external_data/REFNIS_CODES.geojson', driver='GeoJSON')[['cd_munty_refnis', 'geometry']].to_crs(epsg=4326)
 
     # Perform spatial join with municipality data
     joined_data = gpd.sjoin(geo_data, municipality_gdf, how='left', predicate='within')
 
-    # Load external data
-    pop_density_data = pd.read_excel('./data/external_data/PopDensity.xlsx')
-    house_income_data = pd.read_excel('./data/external_data/HouseholdIncome.xlsx')
-
-    # Convert columns to int type
-    pop_density_data['Refnis'] = pop_density_data['Refnis'].astype(int)
-    house_income_data['Refnis'] = house_income_data['CD_MUNTY_REFNIS'].astype(int)
-    
-    # Replace NaN values in 'cd_munty_refnis' column
-    joined_data['cd_munty_refnis'] = joined_data['cd_munty_refnis'].fillna(-1)  # Use -1 as a placeholder value
-    
     # Convert 'cd_munty_refnis' column to int type
-    joined_data['cd_munty_refnis'] = joined_data['cd_munty_refnis'].astype(int)
+    joined_data['cd_munty_refnis'] = joined_data['cd_munty_refnis'].fillna(-1).astype(int)
 
-    # Perform second join with population density data
-    joined_data = joined_data.merge(pop_density_data, left_on='cd_munty_refnis', right_on='Refnis', how='left')
-    joined_data = joined_data.merge(house_income_data, left_on='cd_munty_refnis', right_on='Refnis', how='left')
-
-    # Convert the result to a DataFrame
-    joined_data = pd.DataFrame(joined_data)
+    # Data Merge
+    datasets = [pop_density_data, property_value_data, house_income_data]
+    for dataset in datasets:
+        joined_data = joined_data.merge(dataset, left_on='cd_munty_refnis', right_on='Refnis', how='left')
+        joined_data.drop(columns=['Refnis'], inplace=True)
 
     joined_data.to_csv('./data/join_data.csv', index=False)
 
@@ -101,8 +98,8 @@ def clean_data(raw_data):
 
     # Task 1: Drop rows with empty values in 'Price', 'LivingArea', or 'BedroomCount' columns,
     # and drop rows where any of these columns contain infinite values
-    cleaned_data = cleaned_data.dropna(subset=['Price', 'LivingArea', 'BedroomCount', 'Longitude', 'Latitude'])
-    cleaned_data = cleaned_data[~cleaned_data[['Price', 'LivingArea', 'BedroomCount']].isin([np.inf, -np.inf]).any(axis=1)]
+    cleaned_data = cleaned_data.dropna(subset=['Price', 'LivingArea', 'Longitude', 'Latitude'])
+    cleaned_data = cleaned_data[~cleaned_data[['Price', 'LivingArea']].isin([np.inf, -np.inf]).any(axis=1)]
 
     # Task 2: Remove duplicates in the 'ID' column and where all columns but 'ID' are equal
     cleaned_data.drop_duplicates(subset='ID', inplace=True)
@@ -188,26 +185,10 @@ def clean_data(raw_data):
 
     # Task 16: Remove specified columns
     columns_to_drop = [
-    'ID', 'Street', 'HouseNumber', 'Box', 'City', 'Region', 'District', 'PropertyType', 
-    'SaleType', 'BidStylePricing', 'KitchenType', 'Terrace', 'Garden', 'EPCScore', 
-    'Condition', 'ListingExpirationDate', 'ListingCloseDate', 
-    'PropertyUrl', 'ListingCreateDate', 'Property url', 'geometry', 'index_right', 'ogc_fid', 
-    'ogc_fid0', 'cd_sector', 'tx_sector_descr_nl', 'tx_sector_descr_fr', 'tx_sector_descr_de', 
-    'cd_sub_munty', 'tx_sub_munty_nl', 'tx_sub_munty_fr', 'tx_munty_dstr', 'cd_munty_refnis', 
-    'tx_munty_descr_nl', 'tx_munty_descr_fr', 'tx_munty_descr_de', 'cd_dstr_refnis', 
-    'tx_adm_dstr_descr_nl', 'tx_adm_dstr_descr_fr', 'tx_adm_dstr_descr_de', 'cd_prov_refnis', 
-    'tx_prov_descr_nl', 'tx_prov_descr_fr', 'tx_prov_descr_de', 'cd_rgn_refnis', 
-    'tx_rgn_descr_nl', 'tx_rgn_descr_fr', 'tx_rgn_descr_de', 'cd_country', 'cd_nuts_lvl1', 
-    'cd_nuts_lvl2', 'cd_nuts_lvl3', 'ms_area_ha', 'ms_perimeter_m', 'dt_situation', 
-    'Municipality FR', 'Municipality NL', 'Size in km²', 'Refnis_x', 
-    'CD_MUNTY_REFNIS', 'MS_NBR_NON_ZERO_INC', 'MS_NBR_ZERO_INC', 
-    'MS_TOT_NET_TAXABLE_INC', 'MS_NBR_TOT_NET_INC', 'MS_REAL_ESTATE_NET_INC', 
-    'MS_NBR_REAL_ESTATE_NET_INC', 'MS_TOT_NET_MOV_ASS_INC', 'MS_NBR_NET_MOV_ASS_INC', 
-    'MS_TOT_NET_VARIOUS_INC', 'MS_NBR_NET_VARIOUS_INC', 'MS_TOT_NET_PROF_INC', 'MS_NBR_NET_PROF_INC', 
-    'MS_SEP_TAXABLE_INC', 'MS_NBR_SEP_TAXABLE_INC', 'MS_JOINT_TAXABLE_INC', 'MS_NBR_JOINT_TAXABLE_INC', 
-    'MS_TOT_DEDUCT_SPEND', 'MS_NBR_DEDUCT_SPEND', 'MS_TOT_STATE_TAXES', 'MS_NBR_STATE_TAXES', 
-    'MS_TOT_MUNICIP_TAXES', 'MS_NBR_MUNICIP_TAXES', 'MS_TOT_SUBURBS_TAXES', 'MS_NBR_SUBURBS_TAXES',
-    'MS_TOT_TAXES', 'MS_NBR_TOT_TAXES', 'MS_TOT_RESIDENTS', 'Refnis_y', 'bookmarkCount'
+    'ID', 'Street', 'HouseNumber', 'ViewCount', 'ConstructionYear', 'Box', 'City', 'Region', 'District', 'PropertyType',
+    'SaleType', 'BidStylePricing', 'KitchenType', 'EPCScore', 'Terrace', 'Garden', 'Floor',
+    'Condition', 'ListingExpirationDate', 'ListingCloseDate', 'Latitude', 'Longitude',
+    'PropertyUrl', 'ListingCreateDate', 'Property url', 'geometry', 'bookmarkCount', 'index_right', 'cd_munty_refnis'
     ]
 
     cleaned_data.drop(columns=columns_to_drop, inplace=True)
@@ -218,17 +199,25 @@ def clean_data(raw_data):
     # Return the cleaned DataFrame
     return cleaned_data
 
-def engineer_features(cleaned_data):
-    engineered_data = cleaned_data.copy()
+def transform_features(cleaned_data):
+    transformed_data = cleaned_data.copy()
 
-    # Task 14: Feature Engineering and Outlier Removal
+    transformed_data['Price'] = np.log10(transformed_data['Price'] + 1)
+    # transformed_data['LivingArea'] = np.log10(transformed_data['LivingArea'] + 1)
+    # transformed_data['BedroomCount'] = np.log10(transformed_data['BedroomCount'] + 1)
+    # transformed_data['GardenArea'] = np.log10(transformed_data['GardenArea'] + 1)
+
+    # Return the cleaned DataFrame
+    return transformed_data
+
+def engineer_features(transformed_data):
+    engineered_data = transformed_data.copy()
+
+    # Create a new column called PricePerSqm
     engineered_data['PricePerSqm'] = engineered_data['Price'] / engineered_data['LivingArea']
 
     # Create a new column called SqmPerBedroom
     engineered_data['SqmPerBedroom'] = engineered_data['LivingArea'] / engineered_data['BedroomCount']
-
-    # Create a new column called AvgHouseholdIncome
-    engineered_data['AvgHouseholdIncome'] = engineered_data['MS_TOT_NET_INC'] / engineered_data['Population']
 
     # Calculate z-scores within each group defined by 'PostalCode' and 'PropertySubType'
     z_scores = engineered_data.groupby(['PostalCode', 'PropertySubType'])[['PricePerSqm', 'SqmPerBedroom']].transform(stats.zscore)
@@ -237,7 +226,7 @@ def engineer_features(cleaned_data):
     engineered_data = engineered_data[(abs(z_scores['PricePerSqm']) < 3) & (abs(z_scores['SqmPerBedroom']) < 3)]
 
     # Drop columns if they exist
-    columns_to_drop = ['PricePerSqm', 'PostalCode', 'Population', 'MS_TOT_NET_INC']
+    columns_to_drop = ['PricePerSqm', 'SqmPerBedroom', 'Population']
     engineered_data = engineered_data.drop(columns=[col for col in columns_to_drop if col in engineered_data.columns], errors='ignore')
 
     # Save the cleaned data to a CSV file
@@ -246,56 +235,53 @@ def engineer_features(cleaned_data):
     # Return the cleaned DataFrame
     return engineered_data
 
-def split_data(data, test_size=0.2, random_state=None):
+def split_data(data):
     """
-    Split the data into training and testing datasets.
+    Split data into features (X) and target variable (y) and perform preprocessing steps.
 
     Parameters:
-    data (DataFrame): The DataFrame containing the features and target variable
-    test_size (float): The proportion of the dataset to include in the test split (default is 0.2)
-    random_state (int or None): Controls the shuffling applied to the data before splitting (default is None)
+    data (DataFrame): The input data.
 
     Returns:
-    tuple: A tuple containing train and test datasets (X_train, X_test, y_train, y_test)
+    tuple: X_train, X_test, y_train, y_test
     """
-    # Extract features (X) and target variable (y)
-    X = data.drop('Price', axis=1)
+    # Separate features and target variable
+    X = data.drop(columns=['Price'])
     y = data['Price']
 
-    # Split the data into train and test sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
+    # Split the data into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    return X_train, X_test, y_train, y_test
+    # Encode categorical data after splitting
+    encoded_train_data = encode_data(X_train)
+    encoded_test_data = encode_data(X_test)
 
-def encode_data(cleaned_data, train_columns=None):
+    # Standardize the data
+    standardized_train_data = standardize_data(encoded_train_data)
+    standardized_test_data = standardize_data(encoded_test_data)
+
+    # Impute missing values
+    X_train_data = impute_data(standardized_train_data)
+    X_test_data = impute_data(standardized_test_data)
+
+    return X_train_data, X_test_data, y_train, y_test
+
+def encode_data(data):
     """
     Encode categorical data using one-hot encoding.
 
     Parameters:
-    cleaned_data (DataFrame): The cleaned DataFrame
-    train_columns (list): List of column names in the training dataset (optional)
+    data (DataFrame): The DataFrame to be encoded
 
     Returns:
     DataFrame: The DataFrame with encoded categorical features
     """
-   
     # Encode categorical data using one-hot encoding
-    encoded_data = pd.get_dummies(cleaned_data, columns=['PropertySubType', 'Province'], dummy_na=False, drop_first=True)
+    encoded_data = pd.get_dummies(data, columns=['PropertySubType'], dummy_na=False, drop_first=True)
 
     # Convert boolean columns to integer (0 or 1)
     bool_columns = encoded_data.select_dtypes(include=bool).columns
     encoded_data[bool_columns] = encoded_data[bool_columns].astype(int)
-
-    # Ensure that the columns in the test dataset match the columns in the training dataset
-    if train_columns is not None:
-        # Add missing columns in test dataset, if any
-        missing_columns = set(train_columns) - set(encoded_data.columns)
-        for col in missing_columns:
-            encoded_data[col] = 0
-
-        # Remove additional columns in test dataset, if any
-        extra_columns = set(encoded_data.columns) - set(train_columns)
-        encoded_data = encoded_data[train_columns]
 
     # Save the encoded data to a CSV file
     encoded_data.to_csv('./data/encoded_data.csv', index=False, encoding='utf-8')
@@ -321,6 +307,8 @@ def impute_data(encoded_data):
     # Use KNN imputer to impute missing values
     imputer = KNNImputer(n_neighbors=5)  # You can adjust the number of neighbors as needed
     imputed_data[columns_with_missing_values] = imputer.fit_transform(imputed_data[columns_with_missing_values])
+
+    imputed_data.drop(['Longitude', 'Latitude'], axis=1, inplace=True)
 
     # Save the imputed data to a CSV file
     imputed_data.to_csv('./data/imputed_data.csv', index=False, encoding='utf-8')
@@ -363,9 +351,9 @@ def execute_model(model_type, refresh_data):
     elif model_type == "logarithmic_regression":
         from source.models import execute_logarithmic_regression
         metrics, y_test, y_pred = execute_logarithmic_regression(refresh_data)
-    elif model_type == "auto_ml":
-        from source.models import execute_auto_ml
-        metrics, y_test, y_pred = execute_auto_ml(refresh_data)
+    elif model_type == "random_forest":
+        from source.models import execute_random_forest
+        metrics, y_test, y_pred = execute_random_forest(refresh_data)
     else:
         raise ValueError("Invalid model type. Please select a valid model.")
 
@@ -385,7 +373,7 @@ def save_model(model, filename):
     joblib.dump(model, filepath)
     print(f"Model saved as {filepath}")
 
-def visualize_metrics(metrics, y_test, y_pred):
+def visualize_metrics(metrics, y_test, y_pred, comments=""):
     """
     Print the evaluation metrics of a model and visualize the predicted vs actual values.
 
@@ -401,7 +389,7 @@ def visualize_metrics(metrics, y_test, y_pred):
     # Convert R-squared value to percentage
     r_squared_percent = round(r_squared * 100, 2)
 
-    # Format Mean Squared Error with commas for easier readability
+    # Format Mean Squared Error with commas and two decimal places
     formatted_mse = "{:,.2f}".format(mse)
 
     # Print the metrics
@@ -410,23 +398,38 @@ def visualize_metrics(metrics, y_test, y_pred):
     print("R-squared value:", f"{r_squared_percent:.2f}%")
 
     # Plot the metrics
-    fig, ax = plt.subplots(1, 3, figsize=(18, 5))
+    fig, ax = plt.subplots(2, 2, figsize=(15, 12))
 
     # Plot Mean Squared Error
-    ax[0].bar(["Mean Squared Error"], [mse], color='blue')
-    ax[0].set_title(f"Mean Squared Error: {formatted_mse}")
+    ax[0, 0].bar(["Mean Squared Error"], [mse], color='blue')
+    ax[0, 0].set_title(f"Mean Squared Error: {formatted_mse}")
 
     # Plot R-squared value
-    ax[1].bar(["R-squared value"], [r_squared_percent], color='green')
-    ax[1].set_title(f"R-squared value: {r_squared_percent:.2f}%")
-    ax[1].set_ylim([0, 100])  # Set y-axis limits to 0 and 100
+    ax[0, 1].bar(["R-squared value"], [r_squared_percent], color='green')
+    ax[0, 1].set_title(f"R-squared value: {r_squared_percent:.2f}%")
+    ax[0, 1].set_ylim([0, 100])  # Set y-axis limits to 0 and 100
 
     # Plot predicted vs actual values
-    ax[2].scatter(y_test, y_pred, color='blue', alpha=0.5)
-    ax[2].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--', lw=2)  # Plot diagonal line
-    ax[2].set_xlabel('Actual')
-    ax[2].set_ylabel('Predicted')
-    ax[2].set_title('Predicted vs Actual')
+    ax[1, 0].scatter(y_test, y_pred, color='blue', alpha=0.5)
+    ax[1, 0].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--', lw=2)  # Plot diagonal line
+    ax[1, 0].set_xlabel('Actual')
+    ax[1, 0].set_ylabel('Predicted')
+    ax[1, 0].set_title('Predicted vs Actual')
+
+    # Plot Histogram of Residuals
+    residuals = y_test - y_pred
+    sns.histplot(residuals, ax=ax[1, 1], kde=True, color='orange')
+    ax[1, 1].set_title('Histogram of Residuals')
+    ax[1, 1].set_xlabel('Residuals')
+    ax[1, 1].set_ylabel('Frequency')
+
+    # Add MSE and R-squared values at the top of each plot
+    for i in range(2):
+        for j in range(2):
+            ax[i, j].text(0.5, 1.1, f"MSE: {formatted_mse}\nR-squared: {r_squared_percent:.2f}%", horizontalalignment='center', verticalalignment='center', transform=ax[i, j].transAxes, bbox=dict(facecolor='white', alpha=0.5))
+
+    if comments:
+        plt.text(0.5, -0.1, f"Comments: {comments}", horizontalalignment='center', verticalalignment='center', transform=ax[1, 0].transAxes, bbox=dict(facecolor='white', alpha=0.5))
 
     plt.tight_layout()
     plt.show()

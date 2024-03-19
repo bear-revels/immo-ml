@@ -1,21 +1,20 @@
 import time
-from source.utils import execute_model, visualize_metrics
+from source.utils import execute_model, visualize_performance
 
 def main():
     print("Welcome to the Model Execution App!")
-
 
     # Ask which model to use
     print("Select a model to run:")
     print("1. Linear Regression")
     print("2. Logarithmic Regression")
-    print("3. Auto ML")
+    print("3. Random Forest")
     choice = int(input("Enter your choice (1/2/3): "))
 
     models = {
         1: "linear_regression",
         2: "logarithmic_regression",
-        3: "auto_ml"
+        3: "random_forest"
     }
 
     if choice not in models:
@@ -32,6 +31,10 @@ def main():
 
     refresh_data = True if refresh_choice == 1 else False
 
+    # Ask for comments
+    comments = input("Would you like to add any comments? (Press Enter to skip): ")
+
+    # Execute the model
     start_time = time.time()
     print("Program initiated:", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start_time)))
     print(f"Model selected: {model}")
@@ -46,7 +49,7 @@ def main():
 
     # Visualize model evaluation metrics
     if metrics:
-        visualize_metrics(metrics, y_test, y_pred)
+        visualize_performance(metrics, y_test, y_pred, comments)
 
 if __name__ == "__main__":
     main()
