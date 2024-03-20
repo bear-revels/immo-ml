@@ -8,19 +8,6 @@ The ImmoWeb Property Price Prediction Model is a Python application designed to 
 
 ![Property Prices Illustration](https://media.istockphoto.com/id/932743856/vector/property-prices-illustration.jpg?s=612x612&w=0&k=20&c=MpCykgUFuTxQje0JksjDApv9u5ywb5nkJE0brZ-4GiA=)
 
-## 🧩 Data Assumptions
-
-It's important to understand the preprocessing steps taken and of course you're welcome to look through these steps in the utils.py file. For a quick glance, the manipulations and assumptions are listed herein:
-1. dropped rows if null in `Price`, `LivingArea`, `Latitude`, or `Longitude`
-2. removed duplicates by `ID` and all rows concatenates less `ID`
-3. replaced null for 0 in binanary features `Furnished`, `Fireplace`, `TerraceArea`, `GardenArea`, `SwimmingPool`, `BidStylePricing`, `ViewCount`, `bookmarkCount`
-4. filter to `SaleType` == `residential_sale` & `BidStylePricing` == 0
-5. corrected text formatting
-6. type casting columns to int/float where possible
-7. adjusted `BedroomCount` + 1, -`EnergyConsumptionPerSqm` to 0, and `ConstructionYear` > current year +10 to null
-8. removed outliers in `PricePerSqm` and `SqmPerRoom` when grouped by `PostalCode` and `PropertySubType`
-9. normalized the severely right-skewed distribution of `Price`, `LivingArea`, `GardenArea`, and `BedroomCount` using log10
-
 ## 📦 Repo Structure
 
 ```
@@ -53,13 +40,4 @@ The development of this project took 5 days for completion.
 
 ## 📌 Team Members
 
-This project was completed as part of the AI Bootcamp at BeCode.org by Team Python Pricers:
-
-1. [Bear Revels](https://www.linkedin.com/in/bear-revels/)
-2. [Caroline Van Hoeke](https://www.linkedin.com/in/caroline-van-hoeke-8a3b87123/)
-3. [Geraldine Nadela](https://www.linkedin.com/in/geraldine-nadela-60827a11)
-4. [Viktor Cosaert](https://www.linkedin.com/in/viktor-cosaert/)
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project was completed solo as part of the AI Bootcamp at BeCode.org by [Bear Revels](https://www.linkedin.com/in/bear-revels/).

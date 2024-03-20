@@ -1,5 +1,5 @@
+import joblib
 import geopandas as gpd
-import joblib 
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -23,11 +23,11 @@ def import_data(refresh=False):
     if refresh:
         print("Loading and preprocessing new data...")
         raw_data = pd.read_csv("https://raw.githubusercontent.com/bear-revels/immo-eliza-scraping-Python_Pricers/main/data/all_property_details.csv", dtype={'PostalCode': str})
-        raw_data.to_csv('./data/raw_data.csv', index=False, encoding='utf-8')
+        raw_data.to_csv('./files/data/raw_data.csv', index=False, encoding='utf-8')
 
     else:
         print("Preprocessing the existing data...")
-        raw_data = pd.read_csv('./data/raw_data.csv')
+        raw_data = pd.read_csv('./files/data/raw_data.csv')
     return raw_data
 
 def join_data(raw_data):
@@ -42,9 +42,9 @@ def join_data(raw_data):
     """
     # Load external datasets
     geo_data = pd.DataFrame(raw_data)
-    pop_density_data = pd.read_excel('data/external_data/PopDensity.xlsx', dtype={'Refnis': int})
-    house_income_data = pd.read_excel('data/external_data/HouseholdIncome.xlsx', dtype={'Refnis': int})
-    property_value_data = pd.read_excel('data/external_data/PropertyValue.xlsx', dtype={'Refnis': int})
+    pop_density_data = pd.read_excel('files/data/PopDensity.xlsx', dtype={'Refnis': int})
+    house_income_data = pd.read_excel('files/data/HouseholdIncome.xlsx', dtype={'Refnis': int})
+    property_value_data = pd.read_excel('files/data/PropertyValue.xlsx', dtype={'Refnis': int})
 
     # Define a function to create Point objects from latitude and longitude
     def create_point(row):
@@ -62,7 +62,7 @@ def join_data(raw_data):
     geo_data = gpd.GeoDataFrame(raw_data, geometry=geo_data['geometry'], crs='EPSG:4326')
 
     # Read only the necessary column 'cd_munty_refnis' from the municipality GeoJSON file
-    municipality_gdf = gpd.read_file('data/external_data/REFNIS_CODES.geojson', driver='GeoJSON')[['cd_munty_refnis', 'geometry']].to_crs(epsg=4326)
+    municipality_gdf = gpd.read_file('files/data/REFNIS_CODES.geojson', driver='GeoJSON')[['cd_munty_refnis', 'geometry']].to_crs(epsg=4326)
 
     # Perform spatial join with municipality data
     joined_data = gpd.sjoin(geo_data, municipality_gdf, how='left', predicate='within')
@@ -150,7 +150,7 @@ def clean_data(raw_data):
     # Task 13: Replace values less than or equal to 0 in 'EnergyConsumptionPerSqm' with 0
     cleaned_data.loc[cleaned_data['EnergyConsumptionPerSqm'] < 0, 'EnergyConsumptionPerSqm'] = 0
 
-    # Add 1 to the BedroomCount column and fill null values with 1
+    # Add 14 to the BedroomCount column and fill null values with 1
     cleaned_data['BedroomCount'] = cleaned_data['BedroomCount'].fillna(0) + 1
 
     # Task 15: Convert string values to numeric values using dictionaries for specified columns

@@ -2,11 +2,24 @@
 
 ## Project context
 
-The model card documents a Python application developed for building and training machine learning models using data scraped from the ImmoWeb property listing website. The goal of the project is to predict property prices based on features extracted from the listings.
+In an earlier phase of the project, the team configured a web scraping tool to be used to collect real estate property listings. This projec takes that data, preprocesses it, and builds several models for use to predict the price of a property. In this case, we use Linear Regression, Gradient Boosted Decision Tree, and Random Forest modeling techniques. 
 
 ## Data
 
-The input dataset consists of property listing data scraped from ImmoWeb, containing various features such as property size, location, number of rooms, etc. The target variable is the property price.
+The input dataset consists of property listing data scraped from ImmoWeb, containing various features such as property size, location, number of rooms, condition, etc. The target variable is the property price.
+
+## 🧩 Data Assumptions
+
+It's important to understand the preprocessing steps taken and of course you're welcome to look through these steps in the utils.py file. For a quick glance, the manipulations and assumptions are listed herein:
+1. dropped rows if null in `Price`, `LivingArea`, `Latitude`, or `Longitude`
+2. removed duplicates by `ID` and all rows concatenates less `ID`
+3. replaced null for 0 in binanary features `Furnished`, `Fireplace`, `TerraceArea`, `GardenArea`, `SwimmingPool`, `BidStylePricing`, `ViewCount`, `bookmarkCount`
+4. filter to `SaleType` == `residential_sale` & `BidStylePricing` == 0
+5. corrected text formatting
+6. type casting columns to int/float where possible
+7. adjusted `BedroomCount` + 1, -`EnergyConsumptionPerSqm` to 0, and `ConstructionYear` > current year +10 to null
+8. removed outliers in `PricePerSqm` and `SqmPerRoom` when grouped by `PostalCode` and `PropertySubType`
+9. normalized the severely right-skewed distribution of `Price`, `LivingArea`, `GardenArea`, and `BedroomCount` using log10
 
 ## Model details
 
@@ -15,14 +28,19 @@ Three different models are tested in the application:
 - Gradient Boosted Decision Tree
 - Random Forest Regressor
 
-These models are trained using default parameters for each respective algorithm.
+These models are trained using default parameters for each respective algorithm and slightly different preprocessing techniques were taken given the flexibility and needs of each approach. Linear regression demands a more complete, standardized, and normalized structure and therefor was transoformed, imputed, and encoded as such. GBDT and Random Forest are a bit more forgiving with missing values and unscaled features, so they remain in their more natural state. 
 
 ## Performance
 
 Performance metrics such as Mean Squared Error (MSE) and R-squared value are used to evaluate the models. The evaluation results are stored and can be accessed in the event_log.csv file.
 
+Linear Regression:
 ![Linear Regression](data/performance_png/Final%20Linear%20Regression.png)
+
+Gradient Boosted Decision Tree:
 ![Gradient Boosted Decision Tree](data/performance_png/Final%20Gradient%20Boosted%20Decision%20Tree.png)
+
+Random Forest Regressor:
 ![Random Forest](data/performance_png/Final%20Random%20Forest.png)
 
 ## Limitations
@@ -39,8 +57,4 @@ To train the model, users can execute the `main.py` script. Predictions can be g
 
 ## Maintainers
 
-For questions or issues regarding the model building application, please contact the Python Pricers team:
-1. [Bear Revels](https://www.linkedin.com/in/bear-revels/)
-2. [Caroline Van Hoeke](https://www.linkedin.com/in/caroline-van-hoeke-8a3b87123/)
-3. [Geraldine Nadela](https://www.linkedin.com/in/geraldine-nadela-60827a11)
-4. [Viktor Cosaert](https://www.linkedin.com/in/viktor-cosaert/)
+For questions or issues regarding the model building application, please contact [Bear Revels](https://www.linkedin.com/in/bear-revels/)

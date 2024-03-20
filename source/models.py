@@ -1,12 +1,11 @@
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from source.utils import import_data, clean_data, join_data, transform_features, engineer_features, encode_data, impute_data, standardize_data, save_model
-import numpy as np
-import pandas as pd
+from source.utils import (import_data, clean_data, join_data, transform_features, engineer_features,
+                          encode_data, impute_data, standardize_data, save_model, visualize_metrics)
 
 def execute_linear_regression(refresh_data):
     """
@@ -20,21 +19,19 @@ def execute_linear_regression(refresh_data):
     array-like: Actual target values
     array-like: Predicted target values
     """
-    # Assume these functions are defined elsewhere
+    # Preprocess the dataset
     raw_data = import_data(refresh_data)
     joined_data = join_data(raw_data)
     cleaned_data = clean_data(joined_data)
     transformed_data = transform_features(cleaned_data)
     engineered_data = engineer_features(transformed_data)
-
-    # Encode categorical data
     encoded_data = encode_data(engineered_data)
 
-    # Split data into features (X) and target (y)
+    # Split the data into features (X) and target (y)
     X = encoded_data.drop('Price', axis=1)
     y = encoded_data['Price']
 
-    # Split features and target into training and testing sets
+    # Split the data into training and testing datasets
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
     # Standardize the data
@@ -57,7 +54,10 @@ def execute_linear_regression(refresh_data):
     r_squared = r2_score(y_test, y_pred)
 
     # Save the model
-    save_model(model, "linear_regression_model")
+    save_model(model, "linear_regression")
+
+    # Visualize the metrics
+    visualize_metrics({"Mean Squared Error": mse, "R-squared value": r_squared}, y_test, y_pred)
 
     return {"Mean Squared Error": mse, "R-squared value": r_squared}, y_test, y_pred
 
@@ -73,11 +73,9 @@ def execute_gradient_boosted_decision_tree(refresh_data):
     array-like: Actual target values
     array-like: Predicted target values
     """
-    # Import and join the data
+    # Preprocess the dataset
     raw_data = import_data(refresh_data)
     joined_data = join_data(raw_data)
-    
-    # Clean and engineer the joined data
     cleaned_data = clean_data(joined_data)
     transformed_data = transform_features(cleaned_data)
 
@@ -87,7 +85,7 @@ def execute_gradient_boosted_decision_tree(refresh_data):
         label_encoders[column] = LabelEncoder()
         transformed_data[column] = label_encoders[column].fit_transform(transformed_data[column])
 
-    # Split the cleaned and encoded data into features (X) and target (y)
+    # Split the data into features (X) and target (y)
     X = transformed_data.drop('Price', axis=1)
     y = transformed_data['Price']
 
@@ -113,13 +111,10 @@ def execute_gradient_boosted_decision_tree(refresh_data):
     r_squared = r2_score(y_test, y_pred)
 
     # Save the model
-    save_model(model, "gradient_boosted_decision_tree_model")
-    
-    # Concatenate the test dataset with actual and predicted values
-    test_data_with_predictions = pd.concat([X_test.reset_index(drop=True), pd.Series(y_test, name='Actual'), pd.Series(y_pred, name='Predicted')], axis=1)
+    save_model(model, "gradient_boosted_decision_tree")
 
-    # Write the DataFrame to a CSV file
-    test_data_with_predictions.to_csv('./data/actual_vs_pred.csv', index=False)
+    # Visualize the metrics
+    visualize_metrics({"Mean Squared Error": mse, "R-squared value": r_squared}, y_test, y_pred)
 
     return {"Mean Squared Error": mse, "R-squared value": r_squared}, y_test, y_pred
 
@@ -135,11 +130,9 @@ def execute_random_forest(refresh_data):
     array-like: Actual target values
     array-like: Predicted target values
     """
-    # Import and join the data
+    # Preprocess the dataset
     raw_data = import_data(refresh_data)
     joined_data = join_data(raw_data)
-    
-    # Clean and engineer the joined data
     cleaned_data = clean_data(joined_data)
     transformed_data = transform_features(cleaned_data)
 
@@ -149,7 +142,7 @@ def execute_random_forest(refresh_data):
         label_encoders[column] = LabelEncoder()
         transformed_data[column] = label_encoders[column].fit_transform(transformed_data[column])
 
-    # Split the cleaned and encoded data into features (X) and target (y)
+    # Split the data into features (X) and target (y)
     X = transformed_data.drop('Price', axis=1)
     y = transformed_data['Price']
 
@@ -175,12 +168,9 @@ def execute_random_forest(refresh_data):
     r_squared = r2_score(y_test, y_pred)
 
     # Save the model
-    save_model(model, "random_forest_regressor_model")
+    save_model(model, "random_forest_regressor")
+
+    # Visualize the metrics
+    visualize_metrics({"Mean Squared Error": mse, "R-squared value": r_squared}, y_test, y_pred)
     
-    # Concatenate the test dataset with actual and predicted values
-    test_data_with_predictions = pd.concat([X_test.reset_index(drop=True), pd.Series(y_test, name='Actual'), pd.Series(y_pred, name='Predicted')], axis=1)
-
-    # Write the DataFrame to a CSV file
-    test_data_with_predictions.to_csv('./data/actual_vs_pred.csv', index=False)
-
     return {"Mean Squared Error": mse, "R-squared value": r_squared}, y_test, y_pred

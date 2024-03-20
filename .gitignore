@@ -1,4 +1,5 @@
-data/external_data/REFNIS_CODES.geojson
+files/data/REFNIS_CODES.geojson
 models/
 notebook/
+notebook
 source/__pycache__/
