@@ -1,5 +1,6 @@
 import time
-from source.utils import execute_model, visualize_metrics
+import pandas as pd
+from source.utils import execute_model, visualize_metrics, update_model_card
 
 def main():
     print("Welcome to the Model Execution App!")
@@ -7,13 +8,13 @@ def main():
     # Ask which model to use
     print("Select a model to run:")
     print("1. Linear Regression")
-    print("2. Logarithmic Regression")
+    print("2. Gradient Boosted Decision Tree")
     print("3. Random Forest")
     choice = int(input("Enter your choice (1/2/3): "))
 
     models = {
         1: "linear_regression",
-        2: "logarithmic_regression",
+        2: "gradient_boosted_decision_tree",
         3: "random_forest"
     }
 
@@ -50,6 +51,9 @@ def main():
     # Visualize model evaluation metrics
     if metrics:
         visualize_metrics(metrics, y_test, y_pred, comments)
+
+        # Update model card with latest information
+        update_model_card(model, refresh_data, metrics)
 
 if __name__ == "__main__":
     main()

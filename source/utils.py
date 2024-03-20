@@ -4,11 +4,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
-import seaborn as sns
 from datetime import datetime
 from scipy import stats
 from shapely.geometry import Point
-from sklearn.impute import KNNImputer
+from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -203,9 +202,9 @@ def transform_features(cleaned_data):
     transformed_data = cleaned_data.copy()
 
     transformed_data['Price'] = np.log10(transformed_data['Price'] + 1)
-    # transformed_data['LivingArea'] = np.log10(transformed_data['LivingArea'] + 1)
-    # transformed_data['BedroomCount'] = np.log10(transformed_data['BedroomCount'] + 1)
-    # transformed_data['GardenArea'] = np.log10(transformed_data['GardenArea'] + 1)
+    transformed_data['LivingArea'] = np.log10(transformed_data['LivingArea'] + 1)
+    transformed_data['BedroomCount'] = np.log10(transformed_data['BedroomCount'] + 1)
+    transformed_data['GardenArea'] = np.log10(transformed_data['GardenArea'] + 1)
 
     # Return the cleaned DataFrame
     return transformed_data
@@ -226,7 +225,7 @@ def engineer_features(transformed_data):
     engineered_data = engineered_data[(abs(z_scores['PricePerSqm']) < 3) & (abs(z_scores['SqmPerBedroom']) < 3)]
 
     # Drop columns if they exist
-    columns_to_drop = ['PricePerSqm', 'SqmPerBedroom', 'Population']
+    columns_to_drop = ['PostalCode', 'PricePerSqm', 'SqmPerBedroom', 'Population']
     engineered_data = engineered_data.drop(columns=[col for col in columns_to_drop if col in engineered_data.columns], errors='ignore')
 
     # Save the cleaned data to a CSV file
@@ -277,7 +276,7 @@ def encode_data(data):
     DataFrame: The DataFrame with encoded categorical features
     """
     # Encode categorical data using one-hot encoding
-    encoded_data = pd.get_dummies(data, columns=['PropertySubType'], dummy_na=False, drop_first=True)
+    encoded_data = pd.get_dummies(data, columns=['Province', 'PropertySubType'], dummy_na=False, drop_first=True)
 
     # Convert boolean columns to integer (0 or 1)
     bool_columns = encoded_data.select_dtypes(include=bool).columns
@@ -290,7 +289,7 @@ def encode_data(data):
 
 def impute_data(encoded_data):
     """
-    Impute missing values in the DataFrame using KNN imputation.
+    Impute missing values in the DataFrame using SimpleImputer with median strategy.
 
     Parameters:
     encoded_data (DataFrame): The DataFrame with encoded categorical features
@@ -304,11 +303,9 @@ def impute_data(encoded_data):
     # Identify columns with missing values
     columns_with_missing_values = imputed_data.columns[imputed_data.isnull().any()].tolist()
 
-    # Use KNN imputer to impute missing values
-    imputer = KNNImputer(n_neighbors=5)  # You can adjust the number of neighbors as needed
+    # Use SimpleImputer with median strategy to impute missing values
+    imputer = SimpleImputer(strategy='median')
     imputed_data[columns_with_missing_values] = imputer.fit_transform(imputed_data[columns_with_missing_values])
-
-    imputed_data.drop(['Longitude', 'Latitude'], axis=1, inplace=True)
 
     # Save the imputed data to a CSV file
     imputed_data.to_csv('./data/imputed_data.csv', index=False, encoding='utf-8')
@@ -348,9 +345,9 @@ def execute_model(model_type, refresh_data):
     if model_type == "linear_regression":
         from source.models import execute_linear_regression
         metrics, y_test, y_pred = execute_linear_regression(refresh_data)
-    elif model_type == "logarithmic_regression":
-        from source.models import execute_logarithmic_regression
-        metrics, y_test, y_pred = execute_logarithmic_regression(refresh_data)
+    elif model_type == "gradient_boosted_decision_tree":
+        from source.models import execute_gradient_boosted_decision_tree
+        metrics, y_test, y_pred = execute_gradient_boosted_decision_tree(refresh_data)
     elif model_type == "random_forest":
         from source.models import execute_random_forest
         metrics, y_test, y_pred = execute_random_forest(refresh_data)
@@ -421,3 +418,57 @@ def visualize_metrics(metrics, y_test, y_pred, comments=""):
 
     plt.tight_layout()
     plt.show()
+
+def update_model_card(model, refresh_data, metrics):
+    """
+    Update the model card with the latest information.
+
+    Parameters:
+    model (str): The type of model executed.
+    refresh_data (bool): Whether the data was refreshed.
+    metrics (dict): Dictionary containing evaluation metrics.
+    """
+    # Define the file paths
+    event_log_csv = "./data/event_log.csv"
+    model_card_md = "modelcard.md"
+
+    # Update event log CSV
+    if not os.path.exists(event_log_csv):
+        with open(event_log_csv, "w") as f:
+            f.write("Model,Model Refresh Date,Data Refresh Date,Mean Squared Error,R-squared value\n")
+
+    event_log_df = pd.read_csv(event_log_csv)
+
+    model_refresh_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    data_refresh_date = datetime.fromtimestamp(os.path.getmtime("./data/raw_data.csv")).strftime("%Y-%m-%d %H:%M:%S")
+
+    new_row = {
+        'Model': model,
+        'Model Refresh Date': model_refresh_date,
+        'Data Refresh Date': data_refresh_date,
+        'Mean Squared Error': metrics.get("Mean Squared Error"),
+        'R-squared value': metrics.get("R-squared value")
+    }
+    event_log_df = event_log_df.append(new_row, ignore_index=True)
+    event_log_df.to_csv(event_log_csv, index=False)
+
+    print("Event log updated successfully!")
+
+    # Update model card markdown
+    with open(model_card_md, 'r') as f:
+        model_card_content = f.readlines()
+
+    start_line = model_card_content.index("### Model Performance\n")
+    end_line = model_card_content.index("## Limitations\n")
+
+    table_template = "| Model | Mean Squared Error | R-squared value |\n"
+    table_template += "|-------|--------------------|-----------------|\n"
+
+    table_template += f"| {model} | {metrics.get('Mean Squared Error')} | {metrics.get('R-squared value')} |\n"
+
+    model_card_content[start_line + 2:end_line] = table_template.split('\n')
+
+    with open(model_card_md, 'w') as f:
+        f.writelines(model_card_content)
+
+    print("Model card markdown updated successfully!")
