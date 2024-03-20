@@ -1,6 +1,6 @@
 import time
-import pandas as pd
-from source.utils import execute_model, visualize_metrics, update_model_card
+from datetime import datetime  # Add this line
+from source.utils import execute_model, visualize_metrics, update_event_log, update_model_card
 
 def main():
     print("Welcome to the Model Execution App!")
@@ -51,9 +51,6 @@ def main():
     # Visualize model evaluation metrics
     if metrics:
         visualize_metrics(metrics, y_test, y_pred, comments)
-
-        # Update model card with latest information
-        update_model_card(model, refresh_data, metrics)
 
 if __name__ == "__main__":
     main()

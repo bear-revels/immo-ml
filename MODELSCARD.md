@@ -21,11 +21,9 @@ These models are trained using default parameters for each respective algorithm.
 
 Performance metrics such as Mean Squared Error (MSE) and R-squared value are used to evaluate the models. The evaluation results are stored and can be accessed in the event_log.csv file.
 
-| Model                         | Mean Squared Error | R-squared value |
-|-------------------------------|--------------------|-----------------|
-| Linear Regression             | {{ latest_metrics["Linear Regression"]["Mean Squared Error"] }} | {{ latest_metrics["Linear Regression"]["R-squared value"] }} |
-| Gradient Boosted Decision Tree| {{ latest_metrics["Gradient Boosted Decision Tree"]["Mean Squared Error"] }} | {{ latest_metrics["Gradient Boosted Decision Tree"]["R-squared value"] }} |
-| Random Forest Regressor       | {{ latest_metrics["Random Forest Regressor"]["Mean Squared Error"] }} | {{ latest_metrics["Random Forest Regressor"]["R-squared value"] }} |
+![Linear Regression](data/performance_png/Final%20Linear%20Regression.png)
+![Gradient Boosted Decision Tree](data/performance_png/Final%20Gradient%20Boosted%20Decision%20Tree.png)
+![Random Forest](data/performance_png/Final%20Random%20Forest.png)
 
 ## Limitations
 

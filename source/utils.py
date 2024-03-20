@@ -8,7 +8,6 @@ from datetime import datetime
 from scipy import stats
 from shapely.geometry import Point
 from sklearn.impute import SimpleImputer
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 def import_data(refresh=False):
@@ -76,8 +75,6 @@ def join_data(raw_data):
     for dataset in datasets:
         joined_data = joined_data.merge(dataset, left_on='cd_munty_refnis', right_on='Refnis', how='left')
         joined_data.drop(columns=['Refnis'], inplace=True)
-
-    joined_data.to_csv('./data/join_data.csv', index=False)
 
     # Return the resulting DataFrame
     return joined_data
@@ -192,9 +189,6 @@ def clean_data(raw_data):
 
     cleaned_data.drop(columns=columns_to_drop, inplace=True)
 
-    # Save the cleaned data to a CSV file
-    cleaned_data.to_csv('./data/clean_data.csv', index=False, encoding='utf-8')
-
     # Return the cleaned DataFrame
     return cleaned_data
 
@@ -228,42 +222,8 @@ def engineer_features(transformed_data):
     columns_to_drop = ['PostalCode', 'PricePerSqm', 'SqmPerBedroom', 'Population']
     engineered_data = engineered_data.drop(columns=[col for col in columns_to_drop if col in engineered_data.columns], errors='ignore')
 
-    # Save the cleaned data to a CSV file
-    engineered_data.to_csv('./data/engineered_data.csv', index=False, encoding='utf-8')
-
     # Return the cleaned DataFrame
     return engineered_data
-
-def split_data(data):
-    """
-    Split data into features (X) and target variable (y) and perform preprocessing steps.
-
-    Parameters:
-    data (DataFrame): The input data.
-
-    Returns:
-    tuple: X_train, X_test, y_train, y_test
-    """
-    # Separate features and target variable
-    X = data.drop(columns=['Price'])
-    y = data['Price']
-
-    # Split the data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-    # Encode categorical data after splitting
-    encoded_train_data = encode_data(X_train)
-    encoded_test_data = encode_data(X_test)
-
-    # Standardize the data
-    standardized_train_data = standardize_data(encoded_train_data)
-    standardized_test_data = standardize_data(encoded_test_data)
-
-    # Impute missing values
-    X_train_data = impute_data(standardized_train_data)
-    X_test_data = impute_data(standardized_test_data)
-
-    return X_train_data, X_test_data, y_train, y_test
 
 def encode_data(data):
     """
@@ -281,9 +241,6 @@ def encode_data(data):
     # Convert boolean columns to integer (0 or 1)
     bool_columns = encoded_data.select_dtypes(include=bool).columns
     encoded_data[bool_columns] = encoded_data[bool_columns].astype(int)
-
-    # Save the encoded data to a CSV file
-    encoded_data.to_csv('./data/encoded_data.csv', index=False, encoding='utf-8')
 
     return encoded_data
 
@@ -307,9 +264,6 @@ def impute_data(encoded_data):
     imputer = SimpleImputer(strategy='median')
     imputed_data[columns_with_missing_values] = imputer.fit_transform(imputed_data[columns_with_missing_values])
 
-    # Save the imputed data to a CSV file
-    imputed_data.to_csv('./data/imputed_data.csv', index=False, encoding='utf-8')
-
     return imputed_data
 
 def standardize_data(data):
@@ -325,9 +279,6 @@ def standardize_data(data):
     # Standardize the data using StandardScaler
     scaler = StandardScaler()
     standardized_data = pd.DataFrame(scaler.fit_transform(data), columns=data.columns)
-
-    # Save the standardized data to a CSV file
-    standardized_data.to_csv('./data/standardized_data.csv', index=False, encoding='utf-8')
 
     return standardized_data
 
@@ -418,57 +369,3 @@ def visualize_metrics(metrics, y_test, y_pred, comments=""):
 
     plt.tight_layout()
     plt.show()
-
-def update_model_card(model, refresh_data, metrics):
-    """
-    Update the model card with the latest information.
-
-    Parameters:
-    model (str): The type of model executed.
-    refresh_data (bool): Whether the data was refreshed.
-    metrics (dict): Dictionary containing evaluation metrics.
-    """
-    # Define the file paths
-    event_log_csv = "./data/event_log.csv"
-    model_card_md = "modelcard.md"
-
-    # Update event log CSV
-    if not os.path.exists(event_log_csv):
-        with open(event_log_csv, "w") as f:
-            f.write("Model,Model Refresh Date,Data Refresh Date,Mean Squared Error,R-squared value\n")
-
-    event_log_df = pd.read_csv(event_log_csv)
-
-    model_refresh_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    data_refresh_date = datetime.fromtimestamp(os.path.getmtime("./data/raw_data.csv")).strftime("%Y-%m-%d %H:%M:%S")
-
-    new_row = {
-        'Model': model,
-        'Model Refresh Date': model_refresh_date,
-        'Data Refresh Date': data_refresh_date,
-        'Mean Squared Error': metrics.get("Mean Squared Error"),
-        'R-squared value': metrics.get("R-squared value")
-    }
-    event_log_df = event_log_df.append(new_row, ignore_index=True)
-    event_log_df.to_csv(event_log_csv, index=False)
-
-    print("Event log updated successfully!")
-
-    # Update model card markdown
-    with open(model_card_md, 'r') as f:
-        model_card_content = f.readlines()
-
-    start_line = model_card_content.index("### Model Performance\n")
-    end_line = model_card_content.index("## Limitations\n")
-
-    table_template = "| Model | Mean Squared Error | R-squared value |\n"
-    table_template += "|-------|--------------------|-----------------|\n"
-
-    table_template += f"| {model} | {metrics.get('Mean Squared Error')} | {metrics.get('R-squared value')} |\n"
-
-    model_card_content[start_line + 2:end_line] = table_template.split('\n')
-
-    with open(model_card_md, 'w') as f:
-        f.writelines(model_card_content)
-
-    print("Model card markdown updated successfully!")

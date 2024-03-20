@@ -4,7 +4,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from source.utils import import_data, clean_data, join_data, transform_features, engineer_features, split_data, encode_data, impute_data, standardize_data, save_model
+from source.utils import import_data, clean_data, join_data, transform_features, engineer_features, encode_data, impute_data, standardize_data, save_model
 import numpy as np
 import pandas as pd
 
