@@ -11,21 +11,23 @@ The ImmoWeb Property Price Prediction Model is a Python application designed to 
 ## 🧩 Data Assumptions
 
 It's important to understand the preprocessing steps taken and of course you're welcome to look through these steps in the utils.py file. For a quick glance, the manipulations and assumptions are listed herein:
-1. dropped rows if null in 'Price', 'LivingArea', 'Latitude', or 'Longitude'
-2. removed duplicates by 'ID' and all rows concatenates less 'ID'
-3. replaced null for 0 in binanary features 'Furnished', 'Fireplace', 'TerraceArea', 'GardenArea', 'SwimmingPool', 'BidStylePricing', 'ViewCount', 'bookmarkCount'
-4. filter to 'SaleType' == 'residential_sale' & 'BidStylePricing' == 0
+1. dropped rows if null in `Price`, `LivingArea`, `Latitude`, or `Longitude`
+2. removed duplicates by `ID` and all rows concatenates less `ID`
+3. replaced null for 0 in binanary features `Furnished`, `Fireplace`, `TerraceArea`, `GardenArea`, `SwimmingPool`, `BidStylePricing`, `ViewCount`, `bookmarkCount`
+4. filter to `SaleType` == `residential_sale` & `BidStylePricing` == 0
 5. corrected text formatting
 6. type casting columns to int/float where possible
-7. adjusted 'BedroomCount' + 1, -'EnergyConsumptionPerSqm' to 0, and 'ConstructionYear' > current year +10 to null
-8. removed outliers in 'PricePerSqm' and 'SqmPerRoom' when grouped by 'PostalCode' and 'PropertySubType'
-9. normalized the severely right-skewed distribution of 'Price', 'LivingArea', 'GardenArea', and 'BedroomCount' using log10
+7. adjusted `BedroomCount` + 1, -`EnergyConsumptionPerSqm` to 0, and `ConstructionYear` > current year +10 to null
+8. removed outliers in `PricePerSqm` and `SqmPerRoom` when grouped by `PostalCode` and `PropertySubType`
+9. normalized the severely right-skewed distribution of `Price`, `LivingArea`, `GardenArea`, and `BedroomCount` using log10
 
 ## 📦 Repo Structure
 
+```
 .
 ├── data/
 │ └── external_data/
+│ └── performance_png/
 │ └── raw_data.csv
 ├── models/
 ├── src/
@@ -35,6 +37,7 @@ It's important to understand the preprocessing steps taken and of course you're 
 ├── MODELSCARD.md
 ├── README.md
 └── requirements.txt
+```
 
 ## 🎮 Usage
 
