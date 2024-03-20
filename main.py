@@ -1,5 +1,5 @@
 import time
-from source.utils import execute_model, visualize_performance
+from source.utils import execute_model, visualize_metrics
 
 def main():
     print("Welcome to the Model Execution App!")
@@ -49,7 +49,7 @@ def main():
 
     # Visualize model evaluation metrics
     if metrics:
-        visualize_performance(metrics, y_test, y_pred, comments)
+        visualize_metrics(metrics, y_test, y_pred, comments)
 
 if __name__ == "__main__":
     main()

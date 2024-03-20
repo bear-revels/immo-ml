@@ -1,4 +1,6 @@
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, BaggingRegressor, AdaBoostRegressor
+from sklearn.model_selection import GridSearchCV
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import cross_val_score, train_test_split
@@ -28,7 +30,7 @@ def execute_linear_regression(refresh_data):
     # Encode categorical data
     encoded_data = encode_data(engineered_data)
 
-    X_train, X_test, y_train, y_test = split_data(encoded_data)
+    X_train, X_test, y_train, y_test = train_test_split(encoded_data)
     
     # Standardize the data
     standardized_train_data = standardize_data(X_train)
@@ -120,13 +122,13 @@ def execute_logarithmic_regression(refresh_data):
 
 def execute_random_forest(refresh_data):
     """
-    Execute a Random Forest Regressor model.
+    Execute a Random Forest Regressor model with bagging, boosting, hyperparameter tuning, and model selection.
 
     Parameters:
     refresh_data (bool): Whether to refresh the data.
 
     Returns:
-    dict: Evaluation metrics of the model
+    dict: Evaluation metrics of the best model
     array-like: Actual target values
     array-like: Predicted target values
     """
@@ -145,28 +147,63 @@ def execute_random_forest(refresh_data):
         transformed_data[column] = label_encoders[column].fit_transform(transformed_data[column])
 
     # Split the cleaned and encoded data into features (X) and target (y)
-    X = transformed_data.drop('Price', axis=1)  # Assuming 'target_column' is the name of your target column
+    X = transformed_data.drop('Price', axis=1)
     y = transformed_data['Price']
 
     # Split the data into training and testing datasets
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=60)
 
-    # Initialize the Random Forest Regressor
-    model = RandomForestRegressor(random_state=60)
+    # Impute missing values in the training data with median values
+    imputer = SimpleImputer(strategy='median')
+    X_train_imputed = imputer.fit_transform(X_train)
+    X_test_imputed = imputer.transform(X_test)
 
-    # Fit the model to the training data
-    model.fit(X_train, y_train)
+    # Initialize the base Random Forest Regressor
+    base_model = RandomForestRegressor(random_state=60)
 
-    # Make predictions on the testing data
-    y_pred = model.predict(X_test)
+    # Hyperparameter tuning with GridSearchCV for base model
+    param_grid_base = {
+        'n_estimators': [50, 100, 150],
+        'max_depth': [None, 10, 20, 30],
+        'min_samples_split': [2, 5, 10],
+        'min_samples_leaf': [1, 2, 4]
+    }
+    grid_search_base = GridSearchCV(base_model, param_grid_base, cv=3, scoring='neg_mean_squared_error')
+    grid_search_base.fit(X_train_imputed, y_train)
+    best_base_model = grid_search_base.best_estimator_
 
-    # Evaluate the model's performance
-    mse = mean_squared_error(y_test, y_pred)
-    actual_mse = 10**mse
+    # Bagging with best-tuned base Random Forest
+    bagging_model = BaggingRegressor(best_base_model, random_state=60)
+    
+    # Boosting with best-tuned base Random Forest
+    boosting_model = AdaBoostRegressor(best_base_model, random_state=60)
+    
+    # Fit bagging and boosting models
+    bagging_model.fit(X_train_imputed, y_train)
+    boosting_model.fit(X_train_imputed, y_train)
+
+    # Compare the performance of the base, bagging, and boosting models
+    models = {'Base': best_base_model, 'Bagging': bagging_model, 'Boosting': boosting_model}
+    best_model_name = None
+    best_mse = float('inf')
+    best_model = None
+    for name, model in models.items():
+        y_pred = model.predict(X_test_imputed)
+        mse = mean_squared_error(y_test, y_pred)
+        if mse < best_mse:
+            best_mse = mse
+            best_model_name = name
+            best_model = model
+
+    # Make predictions on the testing data using the best model
+    y_pred = best_model.predict(X_test_imputed)
+
+    # Evaluate the best model's performance
+    actual_mse = 10 ** best_mse
     r_squared = r2_score(y_test, y_pred)
 
-    # Save the model
-    save_model(model, "random_forest_regressor_model")
+    # Save the best model
+    save_model(best_model, f"best_{best_model_name.lower()}_regressor_model")
     
     # Concatenate the test dataset with actual and predicted values
     test_data_with_predictions = pd.concat([X_test.reset_index(drop=True), pd.Series(y_test, name='Actual'), pd.Series(y_pred, name='Predicted')], axis=1)

@@ -398,38 +398,26 @@ def visualize_metrics(metrics, y_test, y_pred, comments=""):
     print("R-squared value:", f"{r_squared_percent:.2f}%")
 
     # Plot the metrics
-    fig, ax = plt.subplots(2, 2, figsize=(15, 12))
+    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
 
     # Plot Mean Squared Error
-    ax[0, 0].bar(["Mean Squared Error"], [mse], color='blue')
-    ax[0, 0].set_title(f"Mean Squared Error: {formatted_mse}")
+    ax[0].bar(["Mean Squared Error"], [mse], color='blue')
+    ax[0].set_title(f"Mean Squared Error: {formatted_mse}")
 
     # Plot R-squared value
-    ax[0, 1].bar(["R-squared value"], [r_squared_percent], color='green')
-    ax[0, 1].set_title(f"R-squared value: {r_squared_percent:.2f}%")
-    ax[0, 1].set_ylim([0, 100])  # Set y-axis limits to 0 and 100
+    ax[1].bar(["R-squared value"], [r_squared_percent], color='green')
+    ax[1].set_title(f"R-squared value: {r_squared_percent:.2f}%")
+    ax[1].set_ylim([0, 100])  # Set y-axis limits to 0 and 100
 
     # Plot predicted vs actual values
-    ax[1, 0].scatter(y_test, y_pred, color='blue', alpha=0.5)
-    ax[1, 0].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--', lw=2)  # Plot diagonal line
-    ax[1, 0].set_xlabel('Actual')
-    ax[1, 0].set_ylabel('Predicted')
-    ax[1, 0].set_title('Predicted vs Actual')
-
-    # Plot Histogram of Residuals
-    residuals = y_test - y_pred
-    sns.histplot(residuals, ax=ax[1, 1], kde=True, color='orange')
-    ax[1, 1].set_title('Histogram of Residuals')
-    ax[1, 1].set_xlabel('Residuals')
-    ax[1, 1].set_ylabel('Frequency')
-
-    # Add MSE and R-squared values at the top of each plot
-    for i in range(2):
-        for j in range(2):
-            ax[i, j].text(0.5, 1.1, f"MSE: {formatted_mse}\nR-squared: {r_squared_percent:.2f}%", horizontalalignment='center', verticalalignment='center', transform=ax[i, j].transAxes, bbox=dict(facecolor='white', alpha=0.5))
+    ax[2].scatter(y_test, y_pred, color='blue', alpha=0.5)
+    ax[2].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--', lw=2)  # Plot diagonal line
+    ax[2].set_xlabel('Actual')
+    ax[2].set_ylabel('Predicted')
+    ax[2].set_title('Predicted vs Actual')
 
     if comments:
-        plt.text(0.5, -0.1, f"Comments: {comments}", horizontalalignment='center', verticalalignment='center', transform=ax[1, 0].transAxes, bbox=dict(facecolor='white', alpha=0.5))
+        plt.text(0.5, -0.1, f"Comments: {comments}", horizontalalignment='center', verticalalignment='center', transform=ax[2].transAxes, bbox=dict(facecolor='white', alpha=0.5))
 
     plt.tight_layout()
     plt.show()
