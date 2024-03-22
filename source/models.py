@@ -135,7 +135,6 @@ def execute_random_forest(refresh_data):
     joined_data = join_data(raw_data)
     cleaned_data = clean_data(joined_data)
     transformed_data = transform_features(cleaned_data)
-    print(transformed_data.info())
 
     # Perform label encoding on categorical columns
     label_encoders = {}

@@ -1,3 +1,8 @@
+# reduce the input data scheme to features only
+# modularize your preprocessing steps and wrap them with if the column exists statements
+# test with 'uvicorn fastapi_app:app --reload' and swagger ui 'http://localhost:8000/redoc.'
+
+
 from fastapi import FastAPI, HTTPException
 import joblib
 import pandas as pd
@@ -13,28 +18,49 @@ model = joblib.load("models/random_forest.pkl")
 # Define input data schema
 class InputData(BaseModel):
     PostalCode: int
-    Province: List[str]
+    Street: Optional[str]
+    HouseNumber: Optional[str] 
+    Box: Optional[str] 
+    Floor: Optional[float] 
+    City: Optional[str]
+    Region: Optional[str] 
+    District: Optional[str] 
+    Province: Optional[List[str]] 
+    PropertyType: Optional[str] 
     PropertySubType: List[str]
-    LivingArea: float
+    Price: Optional[float] 
+    SaleType: Optional[str]
+    BidStylePricing: Optional[float]
+    ConstructionYear: Optional[float]
     BedroomCount: int
+    LivingArea: float
+    KitchenType: Optional[str] 
     Furnished: Optional[bool]
     Fireplace: Optional[bool]
-    TerraceArea: Optional[float]
-    GardenArea: Optional[float]
-    Facades: Optional[int]
-    SwimmingPool: Optional[bool]
+    Terrace: Optional[float] 
+    TerraceArea: Optional[float] 
+    Garden: Optional[float] 
+    GardenArea: Optional[float] 
+    Facades: Optional[int] 
+    SwimmingPool: Optional[bool]  
+    Condition: Optional[List[str]] 
+    EPCScore: Optional[str]  
     EnergyConsumptionPerSqm: Optional[float]
-    PopDensity: Optional[float]
-    MedianPropertyValue: Optional[float]
-    NetIncomePerResident: Optional[float]
-    Condition: Optional[int]
-    KitchenType: Optional[int]
+    Latitude: Optional[float] 
+    Longitude: Optional[float] 
+    ListingCreateDate: Optional[str] 
+    ListingExpirationDate: Optional[str] 
+    ListingCloseDate: Optional[str]  
+    bookmarkCount: Optional[float] 
+    ViewCount: Optional[float] 
+    PropertyUrl: Optional[float]  
+    Property_url: Optional[str]  
 
 # Initialize FastAPI app
 app = FastAPI()
 
 # Load data to extract options
-raw_data = import_data(refresh_data=False)
+raw_data = pd.read_csv('./files/data/raw_data.csv')
 province_options = raw_data['Province'].unique().tolist()
 property_subtype_options = raw_data['PropertySubType'].unique().tolist()
 condition_options = raw_data['Condition'].unique().tolist()
@@ -46,7 +72,7 @@ def predict_property_price(data: List[InputData]):
     input_df = pd.DataFrame([item.dict() for item in data])
 
     # Ensure the DataFrame has the same columns as the training data
-    expected_columns = [field for field, field_info in InputData.__fields__.items() if field_info.required]
+    expected_columns = [field for field, field_info in InputData.__fields__.items() if field_info.is_required]
     missing_columns = set(expected_columns) - set(input_df.columns)
     if missing_columns:
         raise HTTPException(status_code=400, detail=f"Missing columns: {missing_columns}")
@@ -63,18 +89,11 @@ def predict_property_price(data: List[InputData]):
     return predicted_prices
 
 def preprocess_data(data: pd.DataFrame):
-    # Validate input data against extracted options
-    for attr in InputData.__fields__:
-        if attr not in data.columns:
-            raise HTTPException(status_code=400, detail=f"Invalid attribute: {attr}")
-
-    for attr, options in [('Province', province_options), ('PropertySubType', property_subtype_options), 
-                        ('Condition', condition_options), ('KitchenType', kitchen_type_options)]:
-        if attr not in data.columns or not data[attr].isin(options).all():
-            raise HTTPException(status_code=400, detail=f"Invalid {attr} values")
 
     # Perform preprocessing steps
-    cleaned_data = clean_data(data)
+    raw_data = data
+    joined_data = join_data(raw_data)
+    cleaned_data = clean_data(joined_data)
     transformed_data = transform_features(cleaned_data)
 
     # Perform label encoding on categorical columns
