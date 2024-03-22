@@ -135,6 +135,7 @@ def execute_random_forest(refresh_data):
     joined_data = join_data(raw_data)
     cleaned_data = clean_data(joined_data)
     transformed_data = transform_features(cleaned_data)
+    print(transformed_data.info())
 
     # Perform label encoding on categorical columns
     label_encoders = {}
@@ -168,7 +169,7 @@ def execute_random_forest(refresh_data):
     r_squared = r2_score(y_test, y_pred)
 
     # Save the model
-    save_model(model, "random_forest_regressor")
+    save_model(model, "random_forest")
 
     # Visualize the metrics
     visualize_metrics({"Mean Squared Error": mse, "R-squared value": r_squared}, y_test, y_pred)
