@@ -1,14 +1,10 @@
-import joblib
 import geopandas as gpd
-import matplotlib.pyplot as plt
 import numpy as np
-import os
 import pandas as pd
 from datetime import datetime
 from scipy import stats
 from shapely.geometry import Point
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 
 def import_data(refresh=False):
     """
@@ -40,8 +36,13 @@ def join_data(raw_data):
     Returns:
     DataFrame: Joined data.
     """
+    if isinstance(raw_data, pd.DataFrame):
+        geo_data = pd.DataFrame(raw_data)
+    else:
+        # Convert input_data dictionary to DataFrame
+        geo_data = pd.DataFrame.from_dict(raw_data, orient='index').T
+    
     # Load external datasets
-    geo_data = pd.DataFrame(raw_data)
     pop_density_data = pd.read_excel('files/data/PopDensity.xlsx', dtype={'Refnis': int})
     house_income_data = pd.read_excel('files/data/HouseholdIncome.xlsx', dtype={'Refnis': int})
     property_value_data = pd.read_excel('files/data/PropertyValue.xlsx', dtype={'Refnis': int})
@@ -78,6 +79,8 @@ def join_data(raw_data):
 
     # Return the resulting DataFrame
     return joined_data
+        
+    return geo_data
 
 def clean_data(raw_data):
     """
@@ -92,66 +95,73 @@ def clean_data(raw_data):
 
     cleaned_data = raw_data.copy()
 
-    # Task 1: Drop rows with empty values in 'Price', 'LivingArea', or 'BedroomCount' columns,
-    # and drop rows where any of these columns contain infinite values
-    cleaned_data = cleaned_data.dropna(subset=['Price', 'LivingArea', 'Longitude', 'Latitude'])
-    cleaned_data = cleaned_data[~cleaned_data[['Price', 'LivingArea']].isin([np.inf, -np.inf]).any(axis=1)]
+    # Task 1: Drop rows with empty values in specified columns ('Price', 'LivingArea', 'Longitude', 'Latitude')
+    columns_to_dropna = ['Price', 'LivingArea', 'Longitude', 'Latitude']
+    for column in columns_to_dropna:
+        if column in cleaned_data.columns:
+            cleaned_data = cleaned_data.dropna(subset=[column])
+            cleaned_data = cleaned_data[~cleaned_data[column].isin([np.inf, -np.inf])]
 
     # Task 2: Remove duplicates in the 'ID' column and where all columns but 'ID' are equal
-    cleaned_data.drop_duplicates(subset='ID', inplace=True)
-    cleaned_data.drop_duplicates(subset=cleaned_data.columns.difference(['ID']), keep='first', inplace=True)
+    if 'ID' in cleaned_data.columns:
+        cleaned_data.drop_duplicates(subset='ID', inplace=True)
+        cleaned_data.drop_duplicates(subset=cleaned_data.columns.difference(['ID']), keep='first', inplace=True)
 
     # Task 3: Convert empty values to 0 for specified columns; assumption that if blank then 0
     columns_to_fill_with_zero = ['Furnished', 'Fireplace', 'TerraceArea', 'GardenArea', 'SwimmingPool', 'BidStylePricing', 'ViewCount', 'bookmarkCount']
-    cleaned_data[columns_to_fill_with_zero] = cleaned_data[columns_to_fill_with_zero].fillna(0)
+    for column in columns_to_fill_with_zero:
+        if column in cleaned_data.columns:
+            cleaned_data[column] = cleaned_data[column].fillna(0)
 
     # Task 4: Filter rows where SaleType == 'residential_sale' and BidStylePricing == 0
-    cleaned_data = cleaned_data[(cleaned_data['SaleType'] == 'residential_sale') & (cleaned_data['BidStylePricing'] == 0)].copy()
+    if 'SaleType' in cleaned_data.columns and 'BidStylePricing' in cleaned_data.columns:
+        cleaned_data = cleaned_data[(cleaned_data['SaleType'] == 'residential_sale') & (cleaned_data['BidStylePricing'] == 0)].copy()
 
     # Task 5: Adjust text format
     columns_to_str = ['PropertySubType', 'KitchenType', 'Condition', 'EPCScore']
-
-    def adjust_text_format(x):
-        if isinstance(x, str):
-            return x.title()
-        else:
-            return x
-
-    cleaned_data.loc[:, columns_to_str] = cleaned_data.loc[:, columns_to_str].map(adjust_text_format)
-
-    # Task 6: Remove leading and trailing spaces from string columns
-    cleaned_data.loc[:, columns_to_str] = cleaned_data.loc[:, columns_to_str].apply(lambda x: x.str.strip() if isinstance(x, str) else x)
-
-    # Task 7: Replace the symbol '�' with 'e' in all string columns
-    cleaned_data = cleaned_data.map(lambda x: x.replace('�', 'e') if isinstance(x, str) else x)
+    for column in columns_to_str:
+        if column in cleaned_data.columns:
+            cleaned_data[column] = cleaned_data[column].apply(lambda x: x.title() if isinstance(x, str) else x)
+            cleaned_data[column] = cleaned_data[column].apply(lambda x: x.strip() if isinstance(x, str) else x)
 
     # Task 8: Fill missing values with None and convert specified columns to float64 type
     columns_to_fill_with_none = ['EnergyConsumptionPerSqm']
-    cleaned_data[columns_to_fill_with_none] = cleaned_data[columns_to_fill_with_none].where(cleaned_data[columns_to_fill_with_none].notna(), None)
+    for column in columns_to_fill_with_none:
+        if column in cleaned_data.columns:
+            cleaned_data[column] = cleaned_data[column].where(cleaned_data[column].notna(), None)
 
     columns_to_float64 = ['TerraceArea', 'GardenArea', 'EnergyConsumptionPerSqm']
-    cleaned_data[columns_to_float64] = cleaned_data[columns_to_float64].astype(float)
+    for column in columns_to_float64:
+        if column in cleaned_data.columns:
+            cleaned_data[column] = cleaned_data[column].astype(float)
 
     # Task 9: Convert specified columns to Int64 type
     columns_to_int64 = ['PostalCode', 'ConstructionYear', 'Floor', 'Furnished', 'Fireplace','Facades', 'SwimmingPool', 'bookmarkCount', 'ViewCount']
-    cleaned_data[columns_to_int64] = cleaned_data[columns_to_int64].astype(float).round().astype('Int64')
+    for column in columns_to_int64:
+        if column in cleaned_data.columns:
+            cleaned_data[column] = cleaned_data[column].astype(float).round().astype('Int64')
 
     # Task 10: Replace any ConstructionYear > current_year + 10 with None
-    current_year = datetime.now().year
-    max_construction_year = current_year + 10
-    cleaned_data['ConstructionYear'] = cleaned_data['ConstructionYear'].where(cleaned_data['ConstructionYear'] <= max_construction_year, None)
+    if 'ConstructionYear' in cleaned_data.columns:
+        current_year = datetime.now().year
+        max_construction_year = current_year + 10
+        cleaned_data['ConstructionYear'] = cleaned_data['ConstructionYear'].where(cleaned_data['ConstructionYear'] <= max_construction_year, None)
 
     # Task 11: Trim text after and including '_' from the 'EPCScore' column
-    cleaned_data['EPCScore'] = cleaned_data['EPCScore'].str.split('_').str[0]
+    if 'EPCScore' in cleaned_data.columns:
+        cleaned_data['EPCScore'] = cleaned_data['EPCScore'].str.split('_').str[0]
 
     # Task 12: Convert 'ListingCreateDate' to integer timestamp
-    cleaned_data['ListingCreateDate'] = cleaned_data['ListingCreateDate'].apply(lambda x: int(datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%f%z').timestamp()))
+    if 'ListingCreateDate' in cleaned_data.columns:
+        cleaned_data['ListingCreateDate'] = cleaned_data['ListingCreateDate'].apply(lambda x: int(datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%f%z').timestamp()))
 
     # Task 13: Replace values less than or equal to 0 in 'EnergyConsumptionPerSqm' with 0
-    cleaned_data.loc[cleaned_data['EnergyConsumptionPerSqm'] < 0, 'EnergyConsumptionPerSqm'] = 0
+    if 'EnergyConsumptionPerSqm' in cleaned_data.columns:
+        cleaned_data.loc[cleaned_data['EnergyConsumptionPerSqm'] <= 0, 'EnergyConsumptionPerSqm'] = 0
 
     # Add 14 to the BedroomCount column and fill null values with 1
-    cleaned_data['BedroomCount'] = cleaned_data['BedroomCount'].fillna(0) + 1
+    if 'BedroomCount' in cleaned_data.columns:
+        cleaned_data['BedroomCount'] = cleaned_data['BedroomCount'].fillna(0) + 1
 
     # Task 15: Convert string values to numeric values using dictionaries for specified columns
     condition_mapping = {
@@ -176,18 +186,24 @@ def clean_data(raw_data):
         'Usa_Uninstalled': 0
     }
 
-    cleaned_data['Condition#'] = cleaned_data['Condition'].map(condition_mapping)
-    cleaned_data['KitchenType#'] = cleaned_data['KitchenType'].map(kitchen_mapping)
+    if 'Condition' in cleaned_data.columns:
+        cleaned_data['Condition#'] = cleaned_data['Condition'].map(condition_mapping)
+
+    if 'KitchenType' in cleaned_data.columns:
+        cleaned_data['KitchenType#'] = cleaned_data['KitchenType'].map(kitchen_mapping)
 
     # Task 16: Remove specified columns
     columns_to_drop = [
-    'ID', 'Street', 'HouseNumber', 'ViewCount', 'ConstructionYear', 'Box', 'City', 'Region', 'District', 'PropertyType',
-    'SaleType', 'BidStylePricing', 'KitchenType', 'EPCScore', 'Terrace', 'Garden', 'Floor',
-    'Condition', 'ListingExpirationDate', 'ListingCloseDate', 'Latitude', 'Longitude',
-    'PropertyUrl', 'ListingCreateDate', 'Property url', 'geometry', 'bookmarkCount', 'index_right', 'cd_munty_refnis'
+        'ID', 'Street', 'HouseNumber', 'ViewCount', 'ConstructionYear', 'Box', 'City', 'Region', 'District', 'PropertyType',
+        'SaleType', 'BidStylePricing', 'KitchenType', 'EPCScore', 'Terrace', 'Garden', 'Floor',
+        'Condition', 'ListingExpirationDate', 'ListingCloseDate', 'Latitude', 'Longitude', 
+        'PropertyUrl', 'ListingCreateDate', 'Property url', 'geometry', 'bookmarkCount', 
+        'index_right', 'cd_munty_refnis'
     ]
 
-    cleaned_data.drop(columns=columns_to_drop, inplace=True)
+    for column in columns_to_drop:
+        if column in cleaned_data.columns:
+            cleaned_data.drop(columns=column, inplace=True)
 
     # Return the cleaned DataFrame
     return cleaned_data
@@ -195,32 +211,37 @@ def clean_data(raw_data):
 def transform_features(cleaned_data):
     transformed_data = cleaned_data.copy()
 
-    transformed_data['Price'] = np.log10(transformed_data['Price'] + 1)
-    transformed_data['LivingArea'] = np.log10(transformed_data['LivingArea'] + 1)
-    transformed_data['BedroomCount'] = np.log10(transformed_data['BedroomCount'] + 1)
-    transformed_data['GardenArea'] = np.log10(transformed_data['GardenArea'] + 1)
+    columns_to_transform = ['Price', 'LivingArea', 'BedroomCount', 'GardenArea']
 
-    # Return the cleaned DataFrame
+    for column in columns_to_transform:
+        if column in transformed_data.columns and pd.api.types.is_numeric_dtype(transformed_data[column]):
+            transformed_data[column] = np.log10((transformed_data[column] + 1))
+
+    # Return the transformed DataFrame
     return transformed_data
 
 def engineer_features(transformed_data):
     engineered_data = transformed_data.copy()
 
-    # Create a new column called PricePerSqm
-    engineered_data['PricePerSqm'] = engineered_data['Price'] / engineered_data['LivingArea']
+    # Create a new column called PricePerSqm if 'Price' and 'LivingArea' columns are present
+    if 'Price' in engineered_data.columns and 'LivingArea' in engineered_data.columns:
+        engineered_data['PricePerSqm'] = engineered_data['Price'] / engineered_data['LivingArea']
 
-    # Create a new column called SqmPerBedroom
-    engineered_data['SqmPerBedroom'] = engineered_data['LivingArea'] / engineered_data['BedroomCount']
+    # Create a new column called SqmPerBedroom if 'LivingArea' and 'BedroomCount' columns are present
+    if 'LivingArea' in engineered_data.columns and 'BedroomCount' in engineered_data.columns:
+        engineered_data['SqmPerBedroom'] = engineered_data['LivingArea'] / engineered_data['BedroomCount']
 
     # Calculate z-scores within each group defined by 'PostalCode' and 'PropertySubType'
-    z_scores = engineered_data.groupby(['PostalCode', 'PropertySubType'])[['PricePerSqm', 'SqmPerBedroom']].transform(stats.zscore)
+    if 'PricePerSqm' in engineered_data.columns and 'SqmPerBedroom' in engineered_data.columns:
+        z_scores = engineered_data.groupby(['PostalCode', 'PropertySubType'])[['PricePerSqm', 'SqmPerBedroom']].transform(stats.zscore)
 
-    # Filter out rows where the absolute z-score is less than 3 for both columns
-    engineered_data = engineered_data[(abs(z_scores['PricePerSqm']) < 3) & (abs(z_scores['SqmPerBedroom']) < 3)]
+        # Filter out rows where the absolute z-score is less than 3 for both columns
+        engineered_data = engineered_data[(abs(z_scores['PricePerSqm']) < 3) & (abs(z_scores['SqmPerBedroom']) < 3)]
 
     # Drop columns if they exist
-    columns_to_drop = ['PostalCode', 'PricePerSqm', 'SqmPerBedroom', 'Population']
+    columns_to_drop = ['PricePerSqm', 'SqmPerBedroom', 'Population']
     engineered_data = engineered_data.drop(columns=[col for col in columns_to_drop if col in engineered_data.columns], errors='ignore')
+    engineered_data['PostalCode'] = engineered_data['PostalCode'].astype(str)
 
     # Return the cleaned DataFrame
     return engineered_data
@@ -235,36 +256,12 @@ def encode_data(data):
     Returns:
     DataFrame: The DataFrame with encoded categorical features
     """
-    # Encode categorical data using one-hot encoding
-    encoded_data = pd.get_dummies(data, columns=['Province', 'PropertySubType'], dummy_na=False, drop_first=True)
+    label_encoders = {}
+    for column in data.select_dtypes(include=['object']).columns:
+        label_encoders[column] = LabelEncoder()
+        data[column] = label_encoders[column].fit_transform(data[column])
 
-    # Convert boolean columns to integer (0 or 1)
-    bool_columns = encoded_data.select_dtypes(include=bool).columns
-    encoded_data[bool_columns] = encoded_data[bool_columns].astype(int)
-
-    return encoded_data
-
-def impute_data(encoded_data):
-    """
-    Impute missing values in the DataFrame using SimpleImputer with median strategy.
-
-    Parameters:
-    encoded_data (DataFrame): The DataFrame with encoded categorical features
-
-    Returns:
-    DataFrame: The DataFrame with imputed missing values
-    """
-    # Create a copy of the encoded data
-    imputed_data = encoded_data.copy()
-
-    # Identify columns with missing values
-    columns_with_missing_values = imputed_data.columns[imputed_data.isnull().any()].tolist()
-
-    # Use SimpleImputer with median strategy to impute missing values
-    imputer = SimpleImputer(strategy='median')
-    imputed_data[columns_with_missing_values] = imputer.fit_transform(imputed_data[columns_with_missing_values])
-
-    return imputed_data
+    return data
 
 def standardize_data(data):
     """
@@ -276,96 +273,13 @@ def standardize_data(data):
     Returns:
     DataFrame: The standardized DataFrame
     """
-    # Standardize the data using StandardScaler
-    scaler = StandardScaler()
-    standardized_data = pd.DataFrame(scaler.fit_transform(data), columns=data.columns)
-
-    return standardized_data
-
-def execute_model(model_type, refresh_data):
-    """
-    Execute the specified model.
-
-    Parameters:
-    model_type (str): The type of model to execute
-    refresh_data (bool): Whether to refresh the data.
-
-    Returns:
-    tuple: A tuple containing evaluation metrics (dict), actual values (array), and predicted values (array)
-    """
-    if model_type == "linear_regression":
-        from source.models import execute_linear_regression
-        metrics, y_test, y_pred = execute_linear_regression(refresh_data)
-    elif model_type == "gradient_boosted_decision_tree":
-        from source.models import execute_gradient_boosted_decision_tree
-        metrics, y_test, y_pred = execute_gradient_boosted_decision_tree(refresh_data)
-    elif model_type == "random_forest":
-        from source.models import execute_random_forest
-        metrics, y_test, y_pred = execute_random_forest(refresh_data)
+    # Check if there are numeric features to be standardized
+    numeric_columns = data.select_dtypes(include=['float64', 'int64']).columns
+    if not numeric_columns.empty:
+        # Standardize the data using StandardScaler for numeric features
+        scaler = StandardScaler()
+        standardized_data = data.copy()
+        standardized_data[numeric_columns] = scaler.fit_transform(data[numeric_columns])
+        return standardized_data
     else:
-        raise ValueError("Invalid model type. Please select a valid model.")
-
-    return metrics, y_test, y_pred
-
-def save_model(model, filename):
-    """
-    Save a machine learning model to a file.
-
-    Parameters:
-    model: The machine learning model to be saved
-    filename (str): The name of the file to save the model to
-    """
-    if not os.path.exists("./models"):
-        os.makedirs("./models")
-    filepath = os.path.join("./models", filename + ".pkl")
-    joblib.dump(model, filepath)
-    print(f"Model saved as {filepath}")
-
-def visualize_metrics(metrics, y_test, y_pred, comments=""):
-    """
-    Print the evaluation metrics of a model and visualize the predicted vs actual values.
-
-    Parameters:
-    metrics (dict): Dictionary containing evaluation metrics
-    y_test (array-like): True target values
-    y_pred (array-like): Predicted target values
-    """
-    # Extract metric values
-    mse = metrics.get("Mean Squared Error")
-    r_squared = metrics.get("R-squared value")
-
-    # Convert R-squared value to percentage
-    r_squared_percent = round(r_squared * 100, 2)
-
-    # Format Mean Squared Error with commas and two decimal places
-    formatted_mse = "{:,.2f}".format(mse)
-
-    # Print the metrics
-    print("Evaluation Metrics:")
-    print("Mean Squared Error:", formatted_mse)
-    print("R-squared value:", f"{r_squared_percent:.2f}%")
-
-    # Plot the metrics
-    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
-
-    # Plot Mean Squared Error
-    ax[0].bar(["Mean Squared Error"], [mse], color='blue')
-    ax[0].set_title(f"Mean Squared Error: {formatted_mse}")
-
-    # Plot R-squared value
-    ax[1].bar(["R-squared value"], [r_squared_percent], color='green')
-    ax[1].set_title(f"R-squared value: {r_squared_percent:.2f}%")
-    ax[1].set_ylim([0, 100])  # Set y-axis limits to 0 and 100
-
-    # Plot predicted vs actual values
-    ax[2].scatter(y_test, y_pred, color='blue', alpha=0.5)
-    ax[2].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--', lw=2)  # Plot diagonal line
-    ax[2].set_xlabel('Actual')
-    ax[2].set_ylabel('Predicted')
-    ax[2].set_title('Predicted vs Actual')
-
-    if comments:
-        plt.text(0.5, -0.1, f"Comments: {comments}", horizontalalignment='center', verticalalignment='center', transform=ax[2].transAxes, bbox=dict(facecolor='white', alpha=0.5))
-
-    plt.tight_layout()
-    plt.show()
+        return data
