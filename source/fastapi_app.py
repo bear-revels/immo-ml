@@ -2,8 +2,6 @@ from fastapi import FastAPI, HTTPException
 import joblib
 import pandas as pd
 from pydantic import BaseModel
-import json
-import importlib
 import numpy as np
 from typing import List, Optional
 
@@ -40,8 +38,14 @@ def apply_preprocessing(input_data, preprocessing_pipeline):
 
 # Function to predict the price using the trained LightGBM model
 def predict_price(input_data):
+    # Get the directory of the current script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Construct the absolute file path to the model file
+    model_file_path = os.path.join(script_dir, "models", "light_gbm.pkl")
+
     # Load the trained LightGBM model and preprocessing pipeline
-    model_data = joblib.load("./models/light_gbm.pkl")
+    model_data = joblib.load(model_file_path)
     model = model_data["model"]
     preprocessing_pipeline = model_data["preprocessing_pipeline"]
 
@@ -50,7 +54,6 @@ def predict_price(input_data):
 
     # Make predictions
     predicted_price = model.predict(preprocessed_data)
-
     predicted_price = np.power(10, predicted_price) - 1
 
     return predicted_price[0]

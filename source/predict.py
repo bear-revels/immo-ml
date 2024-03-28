@@ -2,14 +2,7 @@ import os
 import sys
 import pandas as pd
 import numpy as np
-
-# Add the parent directory of 'source' to the Python path
-current_dir = os.path.dirname(os.path.realpath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.append(parent_dir)
-
-# Now 'source' module should be importable
-from source.utils import joblib
+import joblib
 
 # Function to apply preprocessing steps to input data
 def apply_preprocessing(input_data, preprocessing_pipeline):
