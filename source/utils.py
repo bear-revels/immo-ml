@@ -43,45 +43,25 @@ def join_data(raw_data):
         geo_data = pd.DataFrame.from_dict(raw_data, orient='index').T
     
     # Load external datasets
+    postal_refnis = pd.read_excel('files/data/REFNIS_Mapping.xlsx', dtype={'Refnis': int})
     pop_density_data = pd.read_excel('files/data/PopDensity.xlsx', dtype={'Refnis': int})
     house_income_data = pd.read_excel('files/data/HouseholdIncome.xlsx', dtype={'Refnis': int})
     property_value_data = pd.read_excel('files/data/PropertyValue.xlsx', dtype={'Refnis': int})
 
-    # Define a function to create Point objects from latitude and longitude
-    def create_point(row):
-        try:
-            latitude = float(row['Latitude'])
-            longitude = float(row['Longitude'])
-            return Point(longitude, latitude)
-        except ValueError:
-            return None
-
-    # Create Point geometries from latitude and longitude coordinates in real estate data
-    geo_data['geometry'] = geo_data.apply(create_point, axis=1)
-
-    # Load the raw data into a GeoDataFrame
-    geo_data = gpd.GeoDataFrame(raw_data, geometry=geo_data['geometry'], crs='EPSG:4326')
-
-    # Read only the necessary column 'cd_munty_refnis' from the municipality GeoJSON file
-    municipality_gdf = gpd.read_file('files/data/REFNIS_CODES.geojson', driver='GeoJSON')[['cd_munty_refnis', 'geometry']].to_crs(epsg=4326)
-
-    # Perform spatial join with municipality data
-    joined_data = gpd.sjoin(geo_data, municipality_gdf, how='left', predicate='within')
-
     # Convert 'cd_munty_refnis' column to int type
-    joined_data['cd_munty_refnis'] = joined_data['cd_munty_refnis'].fillna(-1).astype(int)
+    joined_data = geo_data.merge(postal_refnis[['PostalCode', 'Refnis']], 
+                             left_on='PostalCode', 
+                             right_on='PostalCode', 
+                             how='left')
 
     # Data Merge
     datasets = [pop_density_data, property_value_data, house_income_data]
     for dataset in datasets:
-        joined_data = joined_data.merge(dataset, left_on='cd_munty_refnis', right_on='Refnis', how='left')
-        joined_data.drop(columns=['Refnis'], inplace=True)
+        joined_data = joined_data.merge(dataset, left_on='Refnis', right_on='Refnis', how='left')
 
     # Return the resulting DataFrame
     return joined_data
         
-    return geo_data
-
 def clean_data(raw_data):
     """
     Clean the raw data by performing several tasks.
@@ -96,7 +76,7 @@ def clean_data(raw_data):
     cleaned_data = raw_data.copy()
 
     # Task 1: Drop rows with empty values in specified columns ('Price', 'LivingArea', 'Longitude', 'Latitude')
-    columns_to_dropna = ['Price', 'LivingArea', 'Longitude', 'Latitude']
+    columns_to_dropna = ['Price', 'LivingArea', 'PostalCode']
     for column in columns_to_dropna:
         if column in cleaned_data.columns:
             cleaned_data = cleaned_data.dropna(subset=[column])
@@ -198,7 +178,7 @@ def clean_data(raw_data):
         'SaleType', 'BidStylePricing', 'KitchenType', 'EPCScore', 'Terrace', 'Garden', 'Floor',
         'Condition', 'ListingExpirationDate', 'ListingCloseDate', 'Latitude', 'Longitude', 
         'PropertyUrl', 'ListingCreateDate', 'Property url', 'geometry', 'bookmarkCount', 
-        'index_right', 'cd_munty_refnis'
+        'index_right', 'Refnis'
     ]
 
     for column in columns_to_drop:

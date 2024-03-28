@@ -1,5 +1,1 @@
-{"join_data": "source.utils.join_data", 
-"clean_data": "source.utils.clean_data", 
-"transform_features": "source.utils.transform_features", 
-"engineer_features": "source.utils.engineer_features", 
-"encode_data": "source.utils.encode_data"}
+{"join_data": "source.utils.join_data", "clean_data": "source.utils.clean_data", "transform_features": "source.utils.transform_features", "engineer_features": "source.utils.engineer_features", "encode_data": "source.utils.encode_data"}

@@ -29,6 +29,8 @@ def execute_random_forest(refresh_data):
     engineered_data = engineer_features(transformed_data)
     encoded_data = encode_data(engineered_data)
 
+    print(encoded_data.info())
+
     # Split the data into features (X) and target (y)
     X = encoded_data.drop('Price', axis=1)
     y = encoded_data['Price']
