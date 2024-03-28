@@ -10,40 +10,50 @@ from typing import List, Optional
 # Define input data schema
 class InputData(BaseModel):
     PostalCode: int
+    Region: str
+    District: str
     Province: str
+    PropertyType: str
     PropertySubType: str
     BedroomCount: int
     LivingArea: float
     KitchenType: Optional[str] 
     Furnished: Optional[int]
     Fireplace: Optional[int]
+    Terrace: int
     TerraceArea: Optional[float] 
+    Garden: int
     GardenArea: Optional[float] 
     Facades: Optional[int] 
     SwimmingPool: Optional[int]  
     EnergyConsumptionPerSqm: Optional[float]
     Condition: Optional[str]
+    EPCScore: Optional[str]
     Latitude: Optional[float] 
     Longitude: Optional[float] 
 
-# Load the trained random forest model
-model = joblib.load("./models/random_forest.pkl")
-
-# Load preprocessing steps from JSON file
-def load_preprocessing_steps(file_path):
-    with open(file_path, 'r') as json_file:
-        preprocessing_steps = json.load(json_file)
-    return preprocessing_steps
-
-# Apply preprocessing steps to input data
-def apply_preprocessing(input_data, preprocessing_steps):
+# Function to apply preprocessing steps to input data
+def apply_preprocessing(input_data, preprocessing_pipeline):
     processed_data = input_data.copy()
-    for step, function in preprocessing_steps.items():
-        module_name, function_name = function.rsplit('.', 1)
-        module = importlib.import_module(module_name)
-        process_function = getattr(module, function_name)
-        processed_data = process_function(processed_data)
+    processed_data = preprocessing_pipeline.transform(processed_data)
     return processed_data
+
+# Function to predict the price using the trained LightGBM model
+def predict_price(input_data):
+    # Load the trained LightGBM model and preprocessing pipeline
+    model_data = joblib.load("./models/light_gbm.pkl")
+    model = model_data["model"]
+    preprocessing_pipeline = model_data["preprocessing_pipeline"]
+
+    # Apply preprocessing pipeline to input data
+    preprocessed_data = apply_preprocessing(input_data, preprocessing_pipeline)
+
+    # Make predictions
+    predicted_price = model.predict(preprocessed_data)
+
+    predicted_price = np.power(10, predicted_price) - 1
+
+    return predicted_price[0]
 
 # Define FastAPI app
 app = FastAPI()
@@ -60,14 +70,8 @@ def predict_property_price(data: List[InputData]):
         raise HTTPException(status_code=400, detail=f"Missing columns: {missing_columns}")
 
     # Load preprocessing steps
-    preprocessing_steps = load_preprocessing_steps("./preprocessing_steps.json")
-
-    # Apply preprocessing steps
-    preprocessed_data = apply_preprocessing(input_df, preprocessing_steps)
-
-    # Make predictions using the loaded model
-    predictions = model.predict(preprocessed_data)
-    corrected_predictions = np.power(10, predictions) - 1
+    predicted_price = predict_price(input_df)
+    corrected_predictions = np.power(10, predicted_price) - 1
 
     # Format predictions as currency
     formatted_predictions = [f'€{price:,.2f}' for price in corrected_predictions]

@@ -1,10 +1,150 @@
-import geopandas as gpd
+import joblib
 import numpy as np
+import os
 import pandas as pd
-from datetime import datetime
-from scipy import stats
-from shapely.geometry import Point
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+import matplotlib.pyplot as plt
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import LabelEncoder
+
+class FilterRows(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        if 'Price' in X.columns and 'LivingArea' in X.columns and 'SaleType' in X.columns and 'BidStylePricing' in X.columns:
+            X_filtered = X[(X['Price'].notnull()) & (X['LivingArea'].notnull()) & 
+                           (X['SaleType'] == 'residential_sale') & (X['BidStylePricing'] != 1)]
+            return X_filtered
+        else:
+            return X
+
+class ReplaceNulls(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        self.columns_to_fill = ['Furnished', 'Fireplace', 'Terrace', 'TerraceArea', 'Garden', 'GardenArea', 'SwimmingPool', 'BidStylePricing', 'ViewCount', 'bookmarkCount']
+
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        X_filled = X.copy()
+        for column in self.columns_to_fill:
+            if column in X_filled.columns:
+                X_filled[column] = X_filled[column].fillna(0)
+        return X_filled
+    
+class JoinData(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        # Load external datasets
+        self.postal_refnis = pd.read_excel('files/data/REFNIS_Mapping.xlsx', dtype={'Refnis': int})
+        self.pop_density_data = pd.read_excel('files/data/PopDensity.xlsx', dtype={'Refnis': int})
+        self.house_income_data = pd.read_excel('files/data/HouseholdIncome.xlsx', dtype={'Refnis': int})
+        self.property_value_data = pd.read_excel('files/data/PropertyValue.xlsx', dtype={'Refnis': int})
+        
+    def fit(self, X, y=None):
+        # Joining external datasets doesn't require fitting on any data,
+        # so we simply return self.
+        return self
+
+    def transform(self, raw_data):
+        if isinstance(raw_data, pd.DataFrame):
+            geo_data = pd.DataFrame(raw_data)
+        else:
+            geo_data = pd.DataFrame.from_dict(raw_data, orient='index').T
+
+        # Merge Refnis
+        if 'PostalCode' in geo_data.columns:
+            joined_data = geo_data.merge(self.postal_refnis[['PostalCode', 'Refnis']], 
+                                    left_on='PostalCode', 
+                                    right_on='PostalCode', 
+                                    how='left')
+
+        # Data Merge
+        datasets = [self.pop_density_data, self.property_value_data, self.house_income_data]
+        for dataset in datasets:
+            if 'Refnis' in joined_data.columns:
+                joined_data = joined_data.merge(dataset, left_on='Refnis', right_on='Refnis', how='left')
+
+        # Return the resulting DataFrame
+        return joined_data
+    
+from sklearn.base import BaseEstimator, TransformerMixin
+
+class DropColumns(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        self.columns_to_drop = ['ID', 'Street', 'HouseNumber', 'Box', 'Floor', 'City', 
+                           'SaleType', 'KitchenType', 'Latitude', 'Longitude', 
+                           'ListingCreateDate', 'ListingExpirationDate', 
+                           'ListingCloseDate', 'PropertyUrl', 'Property url',
+                           'bookmarkCount', 'ViewCount', 'Refnis', 'BidStylePricing',
+                           'ConstructionYear']
+
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        if isinstance(X, pd.DataFrame):
+            columns_to_drop = [col for col in self.columns_to_drop if col in X.columns]
+            X_dropped = X.drop(columns=columns_to_drop, errors='ignore')
+            return X_dropped
+        else:
+            return X
+
+class EncodeCategorical(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        X_encoded = X.copy()
+
+        condition_mapping = {
+            'nan': None,
+            'TO_BE_DONE_UP': 2,
+            'TO_RENOVATE': 1,
+            'JUST_RENOVATED': 4,
+            'AS_NEW': 5,
+            'GOOD': 3,
+            'TO_RESTORE': 0
+        }
+
+        if 'Condition' in X_encoded.columns:
+            X_encoded['Condition'] = X_encoded['Condition'].map(condition_mapping)
+
+        if 'EPCScore' in X_encoded.columns:
+            X_encoded['EPCScore'] = X_encoded['EPCScore'].str.split('_').str[0]
+
+        for column in X_encoded.columns:
+            if X_encoded[column].dtype == 'object':
+                X_encoded[column] = LabelEncoder().fit_transform(X_encoded[column])
+        return X_encoded
+
+class FeatureTransformer:
+    def __init__(self):
+        self.columns_to_transform = ['Price', 'LivingArea', 'BedroomCount', 'GardenArea']
+
+    def fit(self, X, y=None):
+        # This method doesn't do anything for this transformer
+        return self
+
+    def transform(self, X):
+        # Make a copy of the input DataFrame
+        transformed_data = X.copy()
+
+        # Apply transformation to specified columns
+        for column in self.columns_to_transform:
+            if column in transformed_data.columns and pd.api.types.is_numeric_dtype(transformed_data[column]):
+                transformed_data[column] = np.log10((transformed_data[column] + 1))
+
+        return transformed_data
+
+# Define a preprocessing pipeline with ColumnTransformer
+preprocessing = Pipeline(steps=[
+    ('filter_rows', FilterRows()),  # Custom transformer to filter rows
+    ('replace_nulls', ReplaceNulls()),  # Custom transformer to replace null values
+    ('join_data', JoinData()),  # Custom transformer to join external datasets
+    ('drop_columns', DropColumns()),  # Pass the columns to drop
+    ('encode_categorical', EncodeCategorical()),  # Custom transformer to encode categorical variables
+    ('feature_transformer', FeatureTransformer())])
 
 def import_data(refresh=False):
     """
@@ -26,240 +166,73 @@ def import_data(refresh=False):
         raw_data = pd.read_csv('./files/data/raw_data.csv')
     return raw_data
 
-def join_data(raw_data):
+def visualize_metrics(metrics, y_test, y_pred):
     """
-    Join the raw data with external datasets.
+    Print the evaluation metrics of a model and visualize the predicted vs actual values.
 
     Parameters:
-    raw_data (DataFrame): Raw data.
-
-    Returns:
-    DataFrame: Joined data.
+    metrics (dict): Dictionary containing evaluation metrics
+    y_test (array-like): True target values
+    y_pred (array-like): Predicted target values
     """
-    if isinstance(raw_data, pd.DataFrame):
-        geo_data = pd.DataFrame(raw_data)
-    else:
-        # Convert input_data dictionary to DataFrame
-        geo_data = pd.DataFrame.from_dict(raw_data, orient='index').T
+    # Extract metric values
+    mae = metrics.get("Mean Absolute Error")
+    r_squared = metrics.get("R-squared value")
+
+    # Convert R-squared value to percentage
+    r_squared_percent = round(r_squared * 100, 2)
+
+    # Format Mean Squared Error with commas and two decimal places
+    formatted_mae = "{:,.2f}".format(mae)
+
+    # Print the metrics
+    print("Evaluation Metrics:")
+    print("Mean Absolute Error:", formatted_mae)
+    print("R-squared value:", f"{r_squared_percent:.2f}%")
+
+    # Plot the metrics
+    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
+
+    # Plot Mean Squared Error
+    ax[0].bar(["Mean Absolute Error"], [mae], color='blue')
+    ax[0].set_title(f"Mean Absolute Error: {formatted_mae}")
+
+    # Plot R-squared value
+    ax[1].bar(["R-squared value"], [r_squared_percent], color='green')
+    ax[1].set_title(f"R-squared value: {r_squared_percent:.2f}%")
+    ax[1].set_ylim([0, 100])  # Set y-axis limits to 0 and 100
+
+    # Plot predicted vs actual values
+    ax[2].scatter(y_test, y_pred, color='blue', alpha=0.5)
+    ax[2].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--', lw=2)  # Plot diagonal line
+    ax[2].set_xlabel('Actual')
+    ax[2].set_ylabel('Predicted')
+    ax[2].set_title('Predicted vs Actual')
+
+    plt.tight_layout()
+    plt.show()
+
+def save_model(model, filename, params=None, preprocessing_pipeline=None):
+    """
+    Save a machine learning model to a file.
+
+    Parameters:
+    model: The machine learning model to be saved
+    filename (str): The name of the file to save the model to
+    params (dict): Hyperparameters of the model
+    preprocessing_pipeline: Preprocessing pipeline used on the data
+    """
+    if not os.path.exists("./models"):
+        os.makedirs("./models")
     
-    # Load external datasets
-    postal_refnis = pd.read_excel('files/data/REFNIS_Mapping.xlsx', dtype={'Refnis': int})
-    pop_density_data = pd.read_excel('files/data/PopDensity.xlsx', dtype={'Refnis': int})
-    house_income_data = pd.read_excel('files/data/HouseholdIncome.xlsx', dtype={'Refnis': int})
-    property_value_data = pd.read_excel('files/data/PropertyValue.xlsx', dtype={'Refnis': int})
-
-    # Convert 'cd_munty_refnis' column to int type
-    joined_data = geo_data.merge(postal_refnis[['PostalCode', 'Refnis']], 
-                             left_on='PostalCode', 
-                             right_on='PostalCode', 
-                             how='left')
-
-    # Data Merge
-    datasets = [pop_density_data, property_value_data, house_income_data]
-    for dataset in datasets:
-        joined_data = joined_data.merge(dataset, left_on='Refnis', right_on='Refnis', how='left')
-
-    # Return the resulting DataFrame
-    return joined_data
-        
-def clean_data(raw_data):
-    """
-    Clean the raw data by performing several tasks.
-
-    Parameters:
-    raw_data (DataFrame): The raw DataFrame to be cleaned
-
-    Returns:
-    DataFrame: The cleaned DataFrame
-    """
-
-    cleaned_data = raw_data.copy()
-
-    # Task 1: Drop rows with empty values in specified columns ('Price', 'LivingArea', 'Longitude', 'Latitude')
-    columns_to_dropna = ['Price', 'LivingArea', 'PostalCode']
-    for column in columns_to_dropna:
-        if column in cleaned_data.columns:
-            cleaned_data = cleaned_data.dropna(subset=[column])
-            cleaned_data = cleaned_data[~cleaned_data[column].isin([np.inf, -np.inf])]
-
-    # Task 2: Remove duplicates in the 'ID' column and where all columns but 'ID' are equal
-    if 'ID' in cleaned_data.columns:
-        cleaned_data.drop_duplicates(subset='ID', inplace=True)
-        cleaned_data.drop_duplicates(subset=cleaned_data.columns.difference(['ID']), keep='first', inplace=True)
-
-    # Task 3: Convert empty values to 0 for specified columns; assumption that if blank then 0
-    columns_to_fill_with_zero = ['Furnished', 'Fireplace', 'TerraceArea', 'GardenArea', 'SwimmingPool', 'BidStylePricing', 'ViewCount', 'bookmarkCount']
-    for column in columns_to_fill_with_zero:
-        if column in cleaned_data.columns:
-            cleaned_data[column] = cleaned_data[column].fillna(0)
-
-    # Task 4: Filter rows where SaleType == 'residential_sale' and BidStylePricing == 0
-    if 'SaleType' in cleaned_data.columns and 'BidStylePricing' in cleaned_data.columns:
-        cleaned_data = cleaned_data[(cleaned_data['SaleType'] == 'residential_sale') & (cleaned_data['BidStylePricing'] == 0)].copy()
-
-    # Task 5: Adjust text format
-    columns_to_str = ['PropertySubType', 'KitchenType', 'Condition', 'EPCScore']
-    for column in columns_to_str:
-        if column in cleaned_data.columns:
-            cleaned_data[column] = cleaned_data[column].apply(lambda x: x.title() if isinstance(x, str) else x)
-            cleaned_data[column] = cleaned_data[column].apply(lambda x: x.strip() if isinstance(x, str) else x)
-
-    # Task 8: Fill missing values with None and convert specified columns to float64 type
-    columns_to_fill_with_none = ['EnergyConsumptionPerSqm']
-    for column in columns_to_fill_with_none:
-        if column in cleaned_data.columns:
-            cleaned_data[column] = cleaned_data[column].where(cleaned_data[column].notna(), None)
-
-    columns_to_float64 = ['TerraceArea', 'GardenArea', 'EnergyConsumptionPerSqm']
-    for column in columns_to_float64:
-        if column in cleaned_data.columns:
-            cleaned_data[column] = cleaned_data[column].astype(float)
-
-    # Task 9: Convert specified columns to Int64 type
-    columns_to_int64 = ['PostalCode', 'ConstructionYear', 'Floor', 'Furnished', 'Fireplace','Facades', 'SwimmingPool', 'bookmarkCount', 'ViewCount']
-    for column in columns_to_int64:
-        if column in cleaned_data.columns:
-            cleaned_data[column] = cleaned_data[column].astype(float).round().astype('Int64')
-
-    # Task 10: Replace any ConstructionYear > current_year + 10 with None
-    if 'ConstructionYear' in cleaned_data.columns:
-        current_year = datetime.now().year
-        max_construction_year = current_year + 10
-        cleaned_data['ConstructionYear'] = cleaned_data['ConstructionYear'].where(cleaned_data['ConstructionYear'] <= max_construction_year, None)
-
-    # Task 11: Trim text after and including '_' from the 'EPCScore' column
-    if 'EPCScore' in cleaned_data.columns:
-        cleaned_data['EPCScore'] = cleaned_data['EPCScore'].str.split('_').str[0]
-
-    # Task 12: Convert 'ListingCreateDate' to integer timestamp
-    if 'ListingCreateDate' in cleaned_data.columns:
-        cleaned_data['ListingCreateDate'] = cleaned_data['ListingCreateDate'].apply(lambda x: int(datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%f%z').timestamp()))
-
-    # Task 13: Replace values less than or equal to 0 in 'EnergyConsumptionPerSqm' with 0
-    if 'EnergyConsumptionPerSqm' in cleaned_data.columns:
-        cleaned_data.loc[cleaned_data['EnergyConsumptionPerSqm'] <= 0, 'EnergyConsumptionPerSqm'] = 0
-
-    # Add 14 to the BedroomCount column and fill null values with 1
-    if 'BedroomCount' in cleaned_data.columns:
-        cleaned_data['BedroomCount'] = cleaned_data['BedroomCount'].fillna(0) + 1
-
-    # Task 15: Convert string values to numeric values using dictionaries for specified columns
-    condition_mapping = {
-        'nan': None,
-        'To_Be_Done_Up': 2,
-        'To_Renovate': 1,
-        'Just_Renovated': 4,
-        'As_New': 5,
-        'Good': 3,
-        'To_Restore': 0
+    # Save the model, parameters, and preprocessing pipeline to a dictionary
+    model_data = {
+        "model": model,
+        "params": params,
+        "preprocessing_pipeline": preprocessing_pipeline
     }
 
-    kitchen_mapping = {
-        'nan': None,
-        'Installed': 1,
-        'Not_Installed': 0,
-        'Hyper_Equipped': 1,
-        'Semi_Equipped': 1,
-        'Usa_Installed': 1,
-        'Usa_Hyper_Equipped': 1,
-        'Usa_Semi_Equipped': 1,
-        'Usa_Uninstalled': 0
-    }
-
-    if 'Condition' in cleaned_data.columns:
-        cleaned_data['Condition#'] = cleaned_data['Condition'].map(condition_mapping)
-
-    if 'KitchenType' in cleaned_data.columns:
-        cleaned_data['KitchenType#'] = cleaned_data['KitchenType'].map(kitchen_mapping)
-
-    # Task 16: Remove specified columns
-    columns_to_drop = [
-        'ID', 'Street', 'HouseNumber', 'ViewCount', 'ConstructionYear', 'Box', 'City', 'Region', 'District', 'PropertyType',
-        'SaleType', 'BidStylePricing', 'KitchenType', 'EPCScore', 'Terrace', 'Garden', 'Floor',
-        'Condition', 'ListingExpirationDate', 'ListingCloseDate', 'Latitude', 'Longitude', 
-        'PropertyUrl', 'ListingCreateDate', 'Property url', 'geometry', 'bookmarkCount', 
-        'index_right', 'Refnis'
-    ]
-
-    for column in columns_to_drop:
-        if column in cleaned_data.columns:
-            cleaned_data.drop(columns=column, inplace=True)
-
-    # Return the cleaned DataFrame
-    return cleaned_data
-
-def transform_features(cleaned_data):
-    transformed_data = cleaned_data.copy()
-
-    columns_to_transform = ['Price', 'LivingArea', 'BedroomCount', 'GardenArea']
-
-    for column in columns_to_transform:
-        if column in transformed_data.columns and pd.api.types.is_numeric_dtype(transformed_data[column]):
-            transformed_data[column] = np.log10((transformed_data[column] + 1))
-
-    # Return the transformed DataFrame
-    return transformed_data
-
-def engineer_features(transformed_data):
-    engineered_data = transformed_data.copy()
-
-    # Create a new column called PricePerSqm if 'Price' and 'LivingArea' columns are present
-    if 'Price' in engineered_data.columns and 'LivingArea' in engineered_data.columns:
-        engineered_data['PricePerSqm'] = engineered_data['Price'] / engineered_data['LivingArea']
-
-    # Create a new column called SqmPerBedroom if 'LivingArea' and 'BedroomCount' columns are present
-    if 'LivingArea' in engineered_data.columns and 'BedroomCount' in engineered_data.columns:
-        engineered_data['SqmPerBedroom'] = engineered_data['LivingArea'] / engineered_data['BedroomCount']
-
-    # Calculate z-scores within each group defined by 'PostalCode' and 'PropertySubType'
-    if 'PricePerSqm' in engineered_data.columns and 'SqmPerBedroom' in engineered_data.columns:
-        z_scores = engineered_data.groupby(['PostalCode', 'PropertySubType'])[['PricePerSqm', 'SqmPerBedroom']].transform(stats.zscore)
-
-        # Filter out rows where the absolute z-score is less than 3 for both columns
-        engineered_data = engineered_data[(abs(z_scores['PricePerSqm']) < 3) & (abs(z_scores['SqmPerBedroom']) < 3)]
-
-    # Drop columns if they exist
-    columns_to_drop = ['PricePerSqm', 'SqmPerBedroom', 'Population']
-    engineered_data = engineered_data.drop(columns=[col for col in columns_to_drop if col in engineered_data.columns], errors='ignore')
-    engineered_data['PostalCode'] = engineered_data['PostalCode'].astype(str)
-
-    # Return the cleaned DataFrame
-    return engineered_data
-
-def encode_data(data):
-    """
-    Encode categorical data using one-hot encoding.
-
-    Parameters:
-    data (DataFrame): The DataFrame to be encoded
-
-    Returns:
-    DataFrame: The DataFrame with encoded categorical features
-    """
-    label_encoders = {}
-    for column in data.select_dtypes(include=['object']).columns:
-        label_encoders[column] = LabelEncoder()
-        data[column] = label_encoders[column].fit_transform(data[column])
-
-    return data
-
-def standardize_data(data):
-    """
-    Standardize the DataFrame by scaling numeric features.
-
-    Parameters:
-    data (DataFrame): The DataFrame to be standardized
-
-    Returns:
-    DataFrame: The standardized DataFrame
-    """
-    # Check if there are numeric features to be standardized
-    numeric_columns = data.select_dtypes(include=['float64', 'int64']).columns
-    if not numeric_columns.empty:
-        # Standardize the data using StandardScaler for numeric features
-        scaler = StandardScaler()
-        standardized_data = data.copy()
-        standardized_data[numeric_columns] = scaler.fit_transform(data[numeric_columns])
-        return standardized_data
-    else:
-        return data
+    filepath = os.path.join("./models", filename + ".pkl")
+    joblib.dump(model_data, filepath)
+    
+    print(f"Model saved as {filepath}")

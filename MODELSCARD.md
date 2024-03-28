@@ -25,7 +25,7 @@ It's important to understand the preprocessing steps taken and of course you're 
 
 Three different models are tested in the application:
 - Linear Regression
-- Gradient Boosted Decision Tree
+- LightGBM
 - Random Forest Regressor
 
 These models are trained using default parameters for each respective algorithm and slightly different preprocessing techniques were taken given the flexibility and needs of each approach. Linear regression demands a more complete, standardized, and normalized structure and therefor was transoformed, imputed, and encoded as such. GBDT and Random Forest are a bit more forgiving with missing values and unscaled features, so they remain in their more natural state. 
@@ -38,7 +38,7 @@ Linear Regression:
 ![Linear Regression](data/performance_png/Final%20Linear%20Regression.png)
 
 Gradient Boosted Decision Tree:
-![Gradient Boosted Decision Tree](data/performance_png/Final%20Gradient%20Boosted%20Decision%20Tree.png)
+![LightGBM](data/performance_png/Final%20Gradient%20Boosted%20Decision%20Tree.png)
 
 Random Forest Regressor:
 ![Random Forest](data/performance_png/Final%20Random%20Forest.png)

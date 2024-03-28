@@ -1,5 +1,5 @@
 import time
-from source.models import execute_random_forest
+from source.models import trainLinearRegression, trainRandomForest, trainLGBM
 
 def main():
     """
@@ -7,8 +7,15 @@ def main():
     """
     print("Welcome to the Model Execution App!")
 
+    # Ask which model to run
+    print("Which model would you like to run?")
+    print("1. Linear Regression")
+    print("2. Random Forest")
+    print("3. LightGBM")
+    model_choice = int(input("Enter your choice (1/2/3): "))  # Prompting user for model choice
+
     # Ask if the data should be refreshed
-    print("Would you like to refresh the data?")
+    print("\nWould you like to refresh the data?")
     print("1. Yes")
     print("2. No")
     refresh_choice = int(input("Enter your choice (1/2): "))  # Prompting user for refresh choice
@@ -17,11 +24,19 @@ def main():
 
     # Execute the model
     start_time = time.time()  # Record start time of program execution
-    print("Program initiated:", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start_time)))  # Print program start time
-    print("Model selected: random_forest")  # Print selected model
-
-    # Execute the random forest model function
-    execute_random_forest(refresh_data)  # Executing model function
+    print("\nProgram initiated:", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start_time)))  # Print program start time
+    
+    if model_choice == 1:
+        print("Model selected: Linear Regression")  # Print selected model
+        trainLinearRegression(refresh_data)
+    elif model_choice == 2:
+        print("Model selected: Random Forest")  # Print selected model
+        trainRandomForest(refresh_data)
+    elif model_choice == 3:
+        print("Model selected: LightGBM")  # Print selected model
+        trainLGBM(refresh_data)
+    else:
+        print("Invalid choice. Please select 1, 2, or 3.")
 
     # Print total runtime
     end_time = time.time()  # Record end time of program execution

@@ -1,15 +1,56 @@
+import numpy as np
+import pandas as pd
+from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, r2_score
 from sklearn.model_selection import train_test_split
-from source.utils import (import_data, clean_data, join_data, transform_features, engineer_features,
-                          encode_data)
-import joblib
-import json
-import matplotlib.pyplot as plt
-import numpy as np
-import os
+from source.utils import import_data, preprocessing, save_model, visualize_metrics
 
-def execute_random_forest(refresh_data):
+def trainLinearRegression(refresh_data):
+    # Load raw data
+    raw_data = import_data(refresh_data)
+
+    # Apply preprocessing pipeline
+    preprocessed_data = preprocessing.fit_transform(raw_data)
+
+    # Separate features and target variable
+    X = preprocessed_data.drop(columns=['Price'])
+    y = preprocessed_data['Price']
+
+    # Train-test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # Impute missing values in X_train and X_test with median strategy
+    imputer = SimpleImputer(strategy='median')
+    X_train_imputed = pd.DataFrame(imputer.fit_transform(X_train), columns=X_train.columns)
+    X_test_imputed = pd.DataFrame(imputer.transform(X_test), columns=X_test.columns)
+
+    # Initialize Linear Regression model
+    model = LinearRegression()
+
+    # Fit the model on the training data
+    model.fit(X_train_imputed, y_train)
+
+    # Make predictions on the testing data
+    y_pred = model.predict(X_test_imputed)
+
+    # Apply inverse log transformation to y_test and y_pred
+    adj_y_pred = np.power(10, y_pred) - 1
+    adj_y_test = np.power(10, y_test) - 1
+
+    # Evaluate the model
+    mae = mean_absolute_error(adj_y_test, adj_y_pred)
+    r_squared = r2_score(adj_y_test, adj_y_pred)
+    print("Mean Absolute Error:", mae)
+    print("R-squared:", r_squared)
+
+    # Save the model
+    save_model(model, "linear_regression", None, preprocessing)
+    visualize_metrics({"Mean Absolute Error": mae, "R-squared value": r_squared}, adj_y_test, adj_y_pred)
+
+def trainRandomForest(refresh_data):
     """
     Execute a Random Forest Regressor model.
 
@@ -21,21 +62,15 @@ def execute_random_forest(refresh_data):
     array-like: Actual target values
     array-like: Predicted target values
     """
-    # Preprocess the dataset
-    raw_data = import_data(refresh_data)
-    joined_data = join_data(raw_data)
-    cleaned_data = clean_data(joined_data)
-    transformed_data = transform_features(cleaned_data)
-    engineered_data = engineer_features(transformed_data)
-    encoded_data = encode_data(engineered_data)
+    # Preprocess the dataset using the full pipeline
+    raw_data = import_data(refresh_data)  # Assuming this function exists
+    preprocessed_data = preprocessing.fit_transform(raw_data)
 
-    print(encoded_data.info())
+    # Separate features and target variable
+    X = preprocessed_data.drop(columns=['Price'])
+    y = preprocessed_data['Price']
 
-    # Split the data into features (X) and target (y)
-    X = encoded_data.drop('Price', axis=1)
-    y = encoded_data['Price']
-
-    # Split the data into training and testing datasets
+    # Train-test split
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=60)
 
     # Initialize the Random Forest Regressor
@@ -56,80 +91,73 @@ def execute_random_forest(refresh_data):
     r_squared = r2_score(y_test, y_pred)
 
     # Save the model
-    save_model(model, "random_forest")
-
-    # Save preprocessing steps to a JSON file
-    preprocessing_steps = {
-        "join_data": "source.utils.join_data",
-        "clean_data": "source.utils.clean_data",
-        "transform_features": "source.utils.transform_features",
-        "engineer_features": "source.utils.engineer_features",
-        "encode_data": "source.utils.encode_data"
-    }
-    with open('./source/preprocessing_steps.json', 'w') as json_file:
-        json.dump(preprocessing_steps, json_file)
+    save_model(model, "random_forest", None, preprocessing)
 
     # Visualize the metrics
     visualize_metrics({"Mean Absolute Error": mae, "R-squared value": r_squared}, y_test, y_pred)
     
     return {"Mean Absolute Error": mae, "R-squared value": r_squared}, y_test, y_pred
 
-def save_model(model, filename):
-    """
-    Save a machine learning model to a file.
+def trainLGBM(refresh_data):
+    # Load raw data
+    raw_data = import_data(refresh_data)
 
-    Parameters:
-    model: The machine learning model to be saved
-    filename (str): The name of the file to save the model to
-    """
-    if not os.path.exists("./models"):
-        os.makedirs("./models")
-    filepath = os.path.join("./models", filename + ".pkl")
-    joblib.dump(model, filepath)
-    print(f"Model saved as {filepath}")
+    # Apply preprocessing pipeline
+    preprocessed_data = preprocessing.fit_transform(raw_data)
 
-def visualize_metrics(metrics, y_test, y_pred):
-    """
-    Print the evaluation metrics of a model and visualize the predicted vs actual values.
+    # Separate features and target variable
+    X = preprocessed_data.drop(columns=['Price'])
+    y = preprocessed_data['Price']
 
-    Parameters:
-    metrics (dict): Dictionary containing evaluation metrics
-    y_test (array-like): True target values
-    y_pred (array-like): Predicted target values
-    """
-    # Extract metric values
-    mae = metrics.get("Mean Absolute Error")
-    r_squared = metrics.get("R-squared value")
+    # Train-test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Convert R-squared value to percentage
-    r_squared_percent = round(r_squared * 100, 2)
+    # Define hyperparameters
+    hyperparameters = {
+        'boosting_type': 'gbdt',
+        'class_weight': None,
+        'colsample_bytree': 1.0,
+        'importance_type': 'split',
+        'learning_rate': 0.1,
+        'max_depth': -1,
+        'min_child_samples': 20,
+        'min_child_weight': 0.001,
+        'min_split_gain': 0.0,
+        'n_estimators': 300,
+        'n_jobs': None,
+        'num_leaves': 100,
+        'objective': None,
+        'random_state': None,
+        'reg_alpha': 0.0,
+        'reg_lambda': 0.0,
+        'subsample': 1.0,
+        'subsample_for_bin': 200000,
+        'subsample_freq': 0,
+        'force_col_wise': False,
+        'force_row_wise': True,
+        'lambda_l1': 0.1,
+        'lambda_l2': 0.1
+    }
 
-    # Format Mean Squared Error with commas and two decimal places
-    formatted_mae = "{:,.2f}".format(mae)
+    # Initialize LGBMRegressor with specified hyperparameters
+    model = LGBMRegressor(**hyperparameters, verbose=-1)
 
-    # Print the metrics
-    print("Evaluation Metrics:")
-    print("Mean Absolute Error:", formatted_mae)
-    print("R-squared value:", f"{r_squared_percent:.2f}%")
+    # Fit the model on the training data
+    model.fit(X_train, y_train)
 
-    # Plot the metrics
-    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
+    # Make predictions on the testing data
+    y_pred = model.predict(X_test)
 
-    # Plot Mean Squared Error
-    ax[0].bar(["Mean Absolute Error"], [mae], color='blue')
-    ax[0].set_title(f"Mean Absolute Error: {formatted_mae}")
+    # Apply inverse log transformation to y_test and y_pred
+    adj_y_pred = np.power(10, y_pred) - 1
+    adj_y_test = np.power(10, y_test) - 1
 
-    # Plot R-squared value
-    ax[1].bar(["R-squared value"], [r_squared_percent], color='green')
-    ax[1].set_title(f"R-squared value: {r_squared_percent:.2f}%")
-    ax[1].set_ylim([0, 100])  # Set y-axis limits to 0 and 100
+    # Evaluate the model
+    mae = mean_absolute_error(adj_y_test, adj_y_pred)
+    r_squared = r2_score(adj_y_test, adj_y_pred)
+    print("Mean Absolute Error:", mae)
+    print("R-squared:", r_squared)
 
-    # Plot predicted vs actual values
-    ax[2].scatter(y_test, y_pred, color='blue', alpha=0.5)
-    ax[2].plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--', lw=2)  # Plot diagonal line
-    ax[2].set_xlabel('Actual')
-    ax[2].set_ylabel('Predicted')
-    ax[2].set_title('Predicted vs Actual')
-
-    plt.tight_layout()
-    plt.show()
+    # Save the model
+    save_model(model, "light_gbm", hyperparameters, preprocessing)
+    visualize_metrics({"Mean Absolute Error": mae, "R-squared value": r_squared}, adj_y_test, adj_y_pred)

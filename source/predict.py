@@ -1,37 +1,31 @@
+import os
+import sys
 import pandas as pd
-import joblib
-import json
-import importlib
 import numpy as np
 
-# Function to load preprocessing steps from JSON file
-def load_preprocessing_steps(file_path):
-    with open(file_path, 'r') as json_file:
-        preprocessing_steps = json.load(json_file)
-    return preprocessing_steps
+# Add the parent directory of 'source' to the Python path
+current_dir = os.path.dirname(os.path.realpath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+# Now 'source' module should be importable
+from source.utils import joblib
 
 # Function to apply preprocessing steps to input data
-def apply_preprocessing(input_data, preprocessing_steps):
+def apply_preprocessing(input_data, preprocessing_pipeline):
     processed_data = input_data.copy()
-    for step, function in preprocessing_steps.items():
-        module_name, function_name = function.rsplit('.', 1)
-        module = importlib.import_module(module_name)
-        process_function = getattr(module, function_name)
-        processed_data = process_function(processed_data)
+    processed_data = preprocessing_pipeline.transform(processed_data)
     return processed_data
 
-# Function to predict the price using the trained Random Forest model
+# Function to predict the price using the trained LightGBM model
 def predict_price(input_data):
-    # Load the trained Random Forest model
-    model = joblib.load("./models/random_forest.pkl")
+    # Load the trained LightGBM model and preprocessing pipeline
+    model_data = joblib.load("./models/light_gbm.pkl")
+    model = model_data["model"]
+    preprocessing_pipeline = model_data["preprocessing_pipeline"]
 
-    # Load preprocessing steps from JSON file
-    preprocessing_steps = load_preprocessing_steps("./preprocessing_steps.json")
-
-    # Apply preprocessing steps to input data
-    preprocessed_data = apply_preprocessing(input_data, preprocessing_steps)
-
-    print(preprocessed_data.info())
+    # Apply preprocessing pipeline to input data
+    preprocessed_data = apply_preprocessing(input_data, preprocessing_pipeline)
 
     # Make predictions
     predicted_price = model.predict(preprocessed_data)
@@ -43,46 +37,32 @@ def predict_price(input_data):
 if __name__ == "__main__":
     # Example input data for a new house
     new_house_data = {
-    'PostalCode': 9940,
-    'Province': 'East Flanders',
-    'PropertySubType': 'House',
-    'BedroomCount': 3,
-    'LivingArea': 155,
-    'KitchenType': 'Installed',
-    'Furnished': 0,
-    'Fireplace': 0,
-    'TerraceArea': 0,
-    'GardenArea': 35,
-    'Facades': 3,
-    'SwimmingPool': 0,
-    'EnergyConsumptionPerSqm': 100,
-    'Condition': 'Good',
-    'Latitude': 511114671,  # Converted to float
-    'Longitude': 36997650   # Converted to float
-}
+        'PostalCode': 9940,
+	    'Region': 'FLANDERS',
+	    'District': 'Gent',
+        'Province': 'East Flanders',
+	    'PropertyType': 'House',
+        'PropertySubType': 'House',
+        'BedroomCount': 3,
+        'LivingArea': 155,
+        'KitchenType': 'Installed',
+        'Furnished': 0,
+        'Fireplace': 0,
+	    'Terrace': 0,
+        'TerraceArea': 0,
+        'Garden': 1,
+        'GardenArea': 35,
+        'Facades': 3,
+        'SwimmingPool': 0,
+        'EnergyConsumptionPerSqm': 100,
+        'Condition': 'Good',
+	    'EPCScore': 'B',
+        'Latitude': 51.1114671,
+        'Longitude': 3.6997650
+    }
 
     # Convert the dictionary to a DataFrame
     new_house_data = pd.DataFrame([new_house_data])
-
-    # Specify data types for certain columns
-    data_types = {
-        'PostalCode': 'int',
-        'BedroomCount': 'int',
-        'LivingArea': 'int',
-        'Furnished': 'int',
-        'Fireplace': 'int',
-        'TerraceArea': 'int',
-        'GardenArea': 'int',
-        'Facades': 'int',
-        'SwimmingPool': 'int',
-        'EnergyConsumptionPerSqm': 'int',
-        'Latitude': 'float',
-        'Longitude': 'float'
-    }
-
-    # Convert columns to specified data types
-    for col, dtype in data_types.items():
-        new_house_data[col] = new_house_data[col].astype(dtype)
 
     # Predict the price of the new house
     predicted_price = predict_price(new_house_data)
